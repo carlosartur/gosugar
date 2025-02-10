@@ -77,7 +77,6 @@ func (t *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationC
 func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclarationContext) {
 	methodName := ctx.IDENTIFIER().GetText()
 
-	// Encontra a classe pai subindo na árvore de contexto
 	var className string
 	parent := ctx.GetParent()
 	for parent != nil {
@@ -89,17 +88,15 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	}
 
 	if className == "" {
-		fmt.Println("Could not find the parent class for the method.")
-		return
-	}
-
-	if methodName == "Constructor" {
-		constructorMethodName := fmt.Sprintf("New%s", className)
-		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", constructorMethodName))
+		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", methodName))
 	} else {
-		t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
+		if methodName == "Constructor" {
+			constructorMethodName := fmt.Sprintf("New%s", className)
+			t.methodBuilder.WriteString(fmt.Sprintf("func %s(", constructorMethodName))
+		} else {
+			t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
+		}
 	}
-
 
 	// Parâmetros do método
 	params := []string{}
@@ -132,11 +129,12 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	}
 
 	t.methodBuilder.WriteString("{\n") // Início do corpo do método
-	
+
 	if methodName == "Constructor" {
 		t.methodBuilder.WriteString("\tthis := new(" + className + ")\n")
 	}
 }
+
 
 // ExitMethodDeclaration is called when exiting the methodDeclaration production.
 // It retrieves the method name and finalizes the method's Go code representation.
@@ -146,7 +144,7 @@ func (t *TranspilerListener) ExitMethodDeclaration(ctx *parser.MethodDeclaration
 	if methodName == "Constructor" {
 		t.methodBuilder.WriteString("\treturn this\n")
 	}
-	t.methodBuilder.WriteString("\t// TODO: Implement method logic here\n")
+	t.methodBuilder.WriteString("\n")
 	t.methodBuilder.WriteString("}\n\n")
 }
 
@@ -157,6 +155,7 @@ func (t *TranspilerListener) ExitMethodDeclaration(ctx *parser.MethodDeclaration
 func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
     // Process the left-hand side (lhs) of the assignment
     var lhs string
+	var operation string
 
     // Traverse the leftHandSide tree
     if ctx.LeftHandSide() != nil {
@@ -166,11 +165,17 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
         return
     }
 
+	if ctx.AssignmentOperator() != nil {
+		operation = ctx.AssignmentOperator().GetText()
+	} else {
+		operation = "="
+	}
+
     // Get the right-hand side (expression)
     expr := ctx.Expression().GetText()
 
     // Write the assignment as "<lhs> = <expr>"
-    t.methodBuilder.WriteString(fmt.Sprintf("\t%s = %s\n", lhs, expr))
+    t.methodBuilder.WriteString(fmt.Sprintf("\t%s %s %s\n", lhs, operation, expr))
 }
 
 // EnterReturnOperation is called when entering the returnOperation production.

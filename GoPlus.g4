@@ -1,7 +1,12 @@
 grammar GoPlus;
 
 // Regras principais
-program: classDeclaration* EOF;
+program: programDeclaration* EOF;
+
+programDeclaration
+    : classDeclaration
+    | methodDeclaration
+    ;
 
 classDeclaration
     : 'class' IDENTIFIER ( 'use' compositionList )? classBody
@@ -112,6 +117,14 @@ fragment HEX: [0-9a-fA-F];
 
 // Ignorar espaços em branco
 WS: [ \t\r\n]+ -> skip;
+
+BlockComment
+    : '/*' .*? '*/' -> channel(HIDDEN)
+    ;
+
+LineComment
+    : '//' ~[\r\n]* -> channel(HIDDEN)
+    ;
 
 // Final de instrução (implícito)
 NEWLINE: ';'; // Ou ('\r'? '\n' | ';') -> skip;
