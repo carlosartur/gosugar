@@ -93,8 +93,13 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 		return
 	}
 
-	// Construindo a assinatura do método
-	t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
+	if methodName == "Constructor" {
+		constructorMethodName := fmt.Sprintf("New%s", className)
+		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", constructorMethodName))
+	} else {
+		t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
+	}
+
 
 	// Parâmetros do método
 	params := []string{}
@@ -109,7 +114,7 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	t.methodBuilder.WriteString(") ")
 
 	// Tipo de retorno
-	if ctx.ReturnType() != nil {
+	if ctx.ReturnType() != nil && methodName != "Constructor" {
 		if ctx.ReturnType().ParameterList() != nil {
 			// Múltiplos tipos de retorno
 			returnTypes := []string{}
@@ -122,14 +127,15 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 			// Retorno único
 			t.methodBuilder.WriteString(fmt.Sprintf("%s ", singleReturn.GetText()))
 		}
+	} else if methodName == "Constructor" {
+		t.methodBuilder.WriteString(fmt.Sprintf("*%s ", className))
 	}
 
-	if ctx.ReturnType() != nil {
-        returnType := ctx.ReturnType().GetText()
-        t.methodBuilder.WriteString(fmt.Sprintf("%s ", returnType))
-    }
-
 	t.methodBuilder.WriteString("{\n") // Início do corpo do método
+	
+	if methodName == "Constructor" {
+		t.methodBuilder.WriteString("\tthis := new(" + className + ")\n")
+	}
 }
 
 // ExitMethodDeclaration is called when exiting the methodDeclaration production.
