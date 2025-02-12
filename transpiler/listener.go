@@ -86,12 +86,14 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 		}
 		parent = parent.GetParent()
 	}
-
+	
 	if className == "" {
 		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", methodName))
 	} else {
-		if methodName == "Constructor" {
-			t.methodBuilder.WriteString(fmt.Sprintf("func (%s) Constructor(", className))
+		isStatic := ctx.STATIC() != nil
+
+		if methodName == "Constructor" || isStatic {	
+			t.methodBuilder.WriteString(fmt.Sprintf("func (%s) %s(", className, methodName))
 		} else {
 			t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
 		}
@@ -231,6 +233,10 @@ func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObje
     }
 
 	t.methodBuilder.WriteString(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")))
+}
+
+func (t *TranspilerListener) ExitCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
+	t.methodBuilder.WriteString("\n")
 }
 
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {

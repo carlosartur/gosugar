@@ -34,7 +34,7 @@ fieldDeclaration
     ;
 
 methodDeclaration
-    : 'func' IDENTIFIER '(' parameterList? ')' returnType? methodBody
+    : ( STATIC )? 'func' IDENTIFIER '(' parameterList? ')' returnType? methodBody
     ;
 
 returnType
@@ -69,7 +69,7 @@ assignment
     ;
 
 leftHandSide
-    : IDENTIFIER (DOT IDENTIFIER)*
+    : IDENTIFIER ('{}')* (DOT IDENTIFIER)*
     ;
 
 assignmentOperator
@@ -105,13 +105,14 @@ expression
     | NUMBER
     | leftHandSide
     ;
-    
+
 returnOperation
     : 'return' expression?
     ;
 
 // Tokens
 CREATE: 'create';
+STATIC: 'static';
 IDENTIFIER: [a-zA-Z_][a-zA-Z_0-9]*;
 NUMBER: [0-9]+ ('.' [0-9]+)?;
 DOT: '.';
