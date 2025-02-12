@@ -12,6 +12,10 @@ classDeclaration
     : 'class' IDENTIFIER ( 'use' compositionList )? classBody
     ;
 
+createObjectDeclaration
+    : CREATE IDENTIFIER '(' argumentList? ')'
+    ;
+
 compositionList
     : IDENTIFIER ( ',' IDENTIFIER )*
     ;
@@ -94,10 +98,11 @@ argumentList
     ;
 
 expression
-    : IDENTIFIER
+    : createObjectDeclaration
+    | methodCall
+    | IDENTIFIER
     | STRING
     | NUMBER
-    | methodCall
     | leftHandSide
     ;
     
@@ -106,6 +111,7 @@ returnOperation
     ;
 
 // Tokens
+CREATE: 'create';
 IDENTIFIER: [a-zA-Z_][a-zA-Z_0-9]*;
 NUMBER: [0-9]+ ('.' [0-9]+)?;
 DOT: '.';

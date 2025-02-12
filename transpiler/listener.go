@@ -91,8 +91,7 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", methodName))
 	} else {
 		if methodName == "Constructor" {
-			constructorMethodName := fmt.Sprintf("New%s", className)
-			t.methodBuilder.WriteString(fmt.Sprintf("func %s(", constructorMethodName))
+			t.methodBuilder.WriteString(fmt.Sprintf("func (%s) Constructor(", className))
 		} else {
 			t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
 		}
@@ -156,6 +155,7 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
     // Process the left-hand side (lhs) of the assignment
     var lhs string
 	var operation string
+	var expr string
 
     // Traverse the leftHandSide tree
     if ctx.LeftHandSide() != nil {
@@ -171,11 +171,14 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 		operation = "="
 	}
 
-    // Get the right-hand side (expression)
-    expr := ctx.Expression().GetText()
+	createObjDeclaration := ctx.Expression().CreateObjectDeclaration()
 
-    // Write the assignment as "<lhs> = <expr>"
-    t.methodBuilder.WriteString(fmt.Sprintf("\t%s %s %s\n", lhs, operation, expr))
+	if createObjDeclaration != nil {
+		t.methodBuilder.WriteString(fmt.Sprintf("\t%s %s ", lhs, operation))
+	} else {
+		expr = ctx.Expression().GetText()
+		t.methodBuilder.WriteString(fmt.Sprintf("\t%s %s %s\n", lhs, operation, expr))
+	}
 }
 
 // EnterReturnOperation is called when entering the returnOperation production.
@@ -217,6 +220,19 @@ func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
     t.methodBuilder.WriteString(fmt.Sprintf("\t%s(%s)\n", methodName, strings.Join(args, ", ")))
 }
 
+func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
+	className := ctx.IDENTIFIER().GetText()
+
+    args := []string{}
+    if ctx.ArgumentList() != nil {
+        for _, arg := range ctx.ArgumentList().AllExpression() {
+            args = append(args, arg.GetText())
+        }
+    }
+
+	t.methodBuilder.WriteString(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")))
+}
+
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
 }
@@ -231,4 +247,19 @@ func (t *TranspilerListener) VisitErrorNode(node antlr.ErrorNode) {
 
 func (t *TranspilerListener) VisitTerminal(node antlr.TerminalNode) {
 	// Logic for terminal nodes, if necessary
+}
+
+type GetTextInterface interface {
+    GetText() string
+}
+
+func DebugContext(ctx interface{}) {
+	fmt.Println("-----------------\n")
+	fmt.Printf("%T\n\n\n", ctx)
+
+	_, ok := interface{}(ctx).(GetTextInterface)
+
+	if ok {
+		fmt.Println(ctx.(GetTextInterface).GetText())
+	}
 }
