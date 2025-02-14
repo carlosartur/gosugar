@@ -5,9 +5,22 @@ program: programDeclaration* EOF;
 
 programDeclaration
     : importsDeclaration
+    | interfaceDeclaration
     | classDeclaration
     | packageDeclaration
     | methodDeclaration
+    ;
+
+interfaceDeclaration
+    :  'interface' IDENTIFIER interfaceBody
+    ;
+
+interfaceBody
+    : '{' interfaceMethod* '}'
+    ;
+
+interfaceMethod
+    : IDENTIFIER '(' parameterList? ')' returnType?
     ;
 
 classDeclaration
@@ -70,7 +83,7 @@ methodBody
     ;
 
 parameter
-    : IDENTIFIER STAR? IDENTIFIER
+    : IDENTIFIER STAR? IDENTIFIER?
     ;
 
 block

@@ -13,6 +13,10 @@ var ClassInfoMap = make(map[string]*ClassInfo)
 
 var CurrentClass *ClassInfo
 
+var InterfaceInfoMap = make(map[string]*InterfaceInfo)
+
+var CurrentInterface *InterfaceInfo
+
 // TranspilerListener implements the custom listener
 type TranspilerListener struct {
 	*parser.BaseGoPlusListener // Inherits from the generated base listener
@@ -69,7 +73,7 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 		))
 	}
 
-	fmt.Printf("%v\n", CurrentClass)
+	// CurrentClass.PrintClassInfo()
 	
 	CurrentClass = nil
 }
@@ -142,15 +146,23 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	if ctx.ParameterList() != nil {
 		for _, paramCtx := range ctx.ParameterList().AllParameter() {
 			paramName := paramCtx.IDENTIFIER(0).GetText()
-			paramType := paramCtx.IDENTIFIER(1).GetText()
+			
+			if paramCtx.IDENTIFIER(1) != nil {
+				paramType := paramCtx.IDENTIFIER(1).GetText()
 
-			if paramCtx.STAR() != nil {
-				paramType = "*" + paramType
+				if paramCtx.STAR() != nil {
+					paramType = "*" + paramType
+				}
+	
+				params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+	
+				method.AddArg(paramName, paramType)	
+				continue
 			}
+			
+			params = append(params, paramName)
 
-			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
-
-			method.AddArg(paramName, paramType)
+			method.AddArg(paramName, ``)
 		}
 	}
 	t.methodBuilder.WriteString(strings.Join(params, ", "))
@@ -332,8 +344,103 @@ func (t *TranspilerListener) EnterImportsDeclaration(ctx *parser.ImportsDeclarat
 	t.structBuilder.WriteString(fmt.Sprintf("import (\n    %s\n)\n\n", strings.Join(importList, "\n    ")))
 }
 
+// ExitCreateObjectDeclaration is called when exiting the createObjectDeclaration production.
+// It adds a newline to the method builder to separate the create object declaration from
+// any other code.
 func (t *TranspilerListener) ExitCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
 	t.methodBuilder.WriteString("\n")
+}
+
+// EnterInterfaceDeclaration is called when entering the interfaceDeclaration production.
+// It generates the Go code for an interface declaration by writing a line of code to the
+// struct builder in the form of "type <interfaceName> interface {".
+func (t *TranspilerListener) EnterInterfaceDeclaration(ctx *parser.InterfaceDeclarationContext) {
+	interfaceName := ctx.IDENTIFIER().GetText()
+	t.structBuilder.WriteString(fmt.Sprintf("type %s interface {\n", interfaceName))
+
+	CurrentInterface = &InterfaceInfo{
+		Name: interfaceName,
+	}
+}
+
+// ExitInterfaceDeclaration is called when exiting the interfaceDeclaration production.
+// It finalizes the interface declaration by writing a closing brace and adding a newline.
+func (t *TranspilerListener) ExitInterfaceDeclaration(ctx *parser.InterfaceDeclarationContext) {
+	t.structBuilder.WriteString("}\n\n")
+	
+	InterfaceInfoMap[CurrentInterface.Name] = CurrentInterface
+
+	CurrentInterface = nil
+
+	// fmt.Printf(`%+v\n`, InterfaceInfoMap)
+}
+
+func (t *TranspilerListener) EnterInterfaceMethod(ctx *parser.InterfaceMethodContext) {
+	if ctx == nil {
+		fmt.Println("Erro: ctx é nil")
+		return
+	}
+
+	methodName := ctx.IDENTIFIER().GetText()
+	t.structBuilder.WriteString(fmt.Sprintf("\t%s(", methodName))
+
+	method := &Method{Name: methodName}
+
+	params := []string{}
+	if ctx.ParameterList() != nil {
+		for _, paramCtx := range ctx.ParameterList().AllParameter() {
+			paramName := paramCtx.IDENTIFIER(0).GetText()
+
+			paramType := ""
+			if len(paramCtx.AllIDENTIFIER()) > 1 {
+				paramType = paramCtx.IDENTIFIER(1).GetText()
+
+				if paramCtx.STAR() != nil {
+					paramType = "*" + paramType
+				}
+			}
+
+			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+			method.AddArg(paramName, paramType)
+		}
+	}
+
+	t.structBuilder.WriteString(strings.Join(params, ", "))
+	t.structBuilder.WriteString(")")
+
+	if ctx.ReturnType() != nil {
+		if ctx.ReturnType().ReturnTypeList() != nil {
+			returnTypes := []string{}
+			for _, paramCtx := range ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() {
+				returnType := paramCtx.IDENTIFIER().GetText()
+
+				if paramCtx.STAR() != nil {
+					returnType = "*" + returnType
+				}
+
+				returnTypes = append(returnTypes, returnType)
+				method.AddReturnType(returnType)
+			}
+			t.structBuilder.WriteString(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")))
+
+		} else if singleReturn := ctx.ReturnType().IDENTIFIER(); singleReturn != nil {
+			returnType := singleReturn.GetText()
+
+			if ctx.ReturnType().STAR() != nil {
+				returnType = "*" + returnType
+			}
+
+			t.structBuilder.WriteString(fmt.Sprintf("%s ", returnType))
+			method.AddReturnType(returnType)
+		}
+	}
+
+	CurrentInterface.AddMethod(*method)
+	// CurrentInterface.PrintInterfaceInfo()
+}
+
+func (t *TranspilerListener) ExitInterfaceMethod(ctx *parser.InterfaceMethodContext) {
+	t.structBuilder.WriteString("\n")
 }
 
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
