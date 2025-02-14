@@ -4,12 +4,23 @@ grammar GoPlus;
 program: programDeclaration* EOF;
 
 programDeclaration
-    : classDeclaration
+    : importsDeclaration
+    | classDeclaration
+    | packageDeclaration
     | methodDeclaration
     ;
 
 classDeclaration
     : 'class' IDENTIFIER ( 'use' compositionList )? classBody
+    ;
+
+packageDeclaration
+    : 'package' IDENTIFIER
+    ;
+
+importsDeclaration
+    : 'import' STRING 
+    | 'import' '(' WS* STRING (WS* NEWLINE* WS* STRING)* ')'
     ;
 
 createObjectDeclaration
@@ -30,7 +41,7 @@ classMember
     ;
 
 fieldDeclaration
-    : IDENTIFIER IDENTIFIER
+    : IDENTIFIER STAR? IDENTIFIER
     ;
 
 methodDeclaration
@@ -38,8 +49,16 @@ methodDeclaration
     ;
 
 returnType
-    : '(' parameterList ')'
-    | IDENTIFIER
+    : '(' returnTypeList ')'
+    | STAR? IDENTIFIER
+    ;
+
+returnTypeList
+    : returnTypeSingle (',' returnTypeSingle)*
+    ;
+
+returnTypeSingle
+    : STAR? IDENTIFIER
     ;
 
 parameterList
@@ -51,7 +70,7 @@ methodBody
     ;
 
 parameter
-    : IDENTIFIER IDENTIFIER
+    : IDENTIFIER STAR? IDENTIFIER
     ;
 
 block
@@ -107,10 +126,11 @@ expression
     ;
 
 returnOperation
-    : 'return' expression?
+    : 'return' argumentList?
     ;
 
 // Tokens
+STAR: '*';
 CREATE: 'create';
 STATIC: 'static';
 IDENTIFIER: [a-zA-Z_][a-zA-Z_0-9]*;

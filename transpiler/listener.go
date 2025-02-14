@@ -8,6 +8,11 @@ import (
 	"gopp-parser/parser" // Replace with the path to the generated parser
 )
 
+// ClassInfoMap maps class names to their associated ClassInfo instances
+var ClassInfoMap = make(map[string]*ClassInfo)
+
+var CurrentClass *ClassInfo
+
 // TranspilerListener implements the custom listener
 type TranspilerListener struct {
 	*parser.BaseGoPlusListener // Inherits from the generated base listener
@@ -30,11 +35,17 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 	className := ctx.IDENTIFIER().GetText()
 	t.structBuilder.WriteString(fmt.Sprintf("type %s struct {\n", className))
 
+	CurrentClass = &ClassInfo{
+		Name: className,
+	}
+
 	// Add compositions, if they exist
 	if ctx.CompositionList() != nil {
 		for _, compCtx := range ctx.CompositionList().AllIDENTIFIER() {
 			compName := compCtx.GetText()
 			t.structBuilder.WriteString(fmt.Sprintf("\t%s\n", compName))
+
+			CurrentClass.AddUse(compName)
 		}
 	}
 }
@@ -43,6 +54,24 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 // It finalizes the struct declaration by closing the brace and adding a newline.
 func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationContext) {
 	t.structBuilder.WriteString("}\n\n") // Finalizes the struct
+
+	ClassInfoMap[CurrentClass.Name] = CurrentClass
+	
+	if !CurrentClass.HasConstructor() {
+		t.structBuilder.WriteString(fmt.Sprintf(
+			"func (%s) Constructor() *%s {\n"+
+				"\tthis := new(%s)\n"+
+				"\treturn this\n"+
+			"}\n\n",
+			CurrentClass.Name,
+			CurrentClass.Name,
+			CurrentClass.Name,
+		))
+	}
+
+	fmt.Printf("%v\n", CurrentClass)
+	
+	CurrentClass = nil
 }
 
 // EnterFieldDeclaration is called when entering the fieldDeclaration production.
@@ -53,7 +82,14 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 func (t *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationContext) {
 	fieldName := ctx.IDENTIFIER(0).GetText()
 	fieldType := ctx.IDENTIFIER(1).GetText()
+	
+	if ctx.STAR() != nil {
+		fieldType = "*" + fieldType
+	}
+
 	t.structBuilder.WriteString(fmt.Sprintf("\t%s %s\n", fieldName, fieldType))
+
+	CurrentClass.AddField(fieldName, fieldType)
 }
 
 // EnterMethodDeclaration is called when entering the methodDeclaration production.
@@ -76,6 +112,8 @@ func (t *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationC
 // by traversing up the tree of contexts.
 func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclarationContext) {
 	methodName := ctx.IDENTIFIER().GetText()
+
+	method := NewMethod(methodName, []Arg{}, []string{})
 
 	var className string
 	parent := ctx.GetParent()
@@ -105,7 +143,14 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 		for _, paramCtx := range ctx.ParameterList().AllParameter() {
 			paramName := paramCtx.IDENTIFIER(0).GetText()
 			paramType := paramCtx.IDENTIFIER(1).GetText()
+
+			if paramCtx.STAR() != nil {
+				paramType = "*" + paramType
+			}
+
 			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+
+			method.AddArg(paramName, paramType)
 		}
 	}
 	t.methodBuilder.WriteString(strings.Join(params, ", "))
@@ -113,17 +158,28 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 
 	// Tipo de retorno
 	if ctx.ReturnType() != nil && methodName != "Constructor" {
-		if ctx.ReturnType().ParameterList() != nil {
+		if ctx.ReturnType().ReturnTypeList() != nil {
 			// Múltiplos tipos de retorno
 			returnTypes := []string{}
-			for _, paramCtx := range ctx.ReturnType().ParameterList().AllParameter() {
-				returnType := paramCtx.IDENTIFIER(1).GetText()
+			for _, paramCtx := range ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() {
+				returnType := paramCtx.IDENTIFIER().GetText()
+				if paramCtx.STAR() != nil {
+					returnType = "*" + returnType
+				}
+
 				returnTypes = append(returnTypes, returnType)
+				method.AddReturnType(returnType)
 			}
 			t.methodBuilder.WriteString(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")))
 		} else if singleReturn := ctx.ReturnType().IDENTIFIER(); singleReturn != nil {
-			// Retorno único
-			t.methodBuilder.WriteString(fmt.Sprintf("%s ", singleReturn.GetText()))
+			returnType := singleReturn.GetText()
+
+			if ctx.ReturnType().STAR() != nil {
+				returnType = "*" + returnType
+			}
+
+			t.methodBuilder.WriteString(fmt.Sprintf("%s ", returnType))
+			method.AddReturnType(returnType)
 		}
 	} else if methodName == "Constructor" {
 		t.methodBuilder.WriteString(fmt.Sprintf("*%s ", className))
@@ -133,6 +189,10 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 
 	if methodName == "Constructor" {
 		t.methodBuilder.WriteString("\tthis := new(" + className + ")\n")
+	}
+
+	if CurrentClass != nil {
+		CurrentClass.AddMethod(*method)
 	}
 }
 
@@ -188,9 +248,15 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 // If the return operation has an expression, it is included in the generated code.
 // Otherwise, a simple "return" is generated.
 func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationContext) {
-	if ctx.Expression() != nil {
-        expr := ctx.Expression().GetText()
-        t.methodBuilder.WriteString(fmt.Sprintf("\treturn %s\n", expr))
+	if ctx.ArgumentList() != nil {
+		args := []string{}
+		for _, arg := range ctx.ArgumentList().AllExpression() {
+			args = append(args, arg.GetText())
+		}
+		t.methodBuilder.WriteString(fmt.Sprintf("\treturn %s\n", strings.Join(args, ", ")))
+
+        // expr := ctx.Expression().GetText()
+        // t.methodBuilder.WriteString(fmt.Sprintf("\treturn %s\n", expr))
     } else {
         t.methodBuilder.WriteString("\treturn\n")
     }
@@ -222,6 +288,9 @@ func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
     t.methodBuilder.WriteString(fmt.Sprintf("\t%s(%s)\n", methodName, strings.Join(args, ", ")))
 }
 
+// EnterCreateObjectDeclaration is called when entering the createObjectDeclaration production.
+// It retrieves the class name and the arguments from the context and writes a line of code to
+// the method builder in the form of "<className>{}.Constructor(<args>)".
 func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
 	className := ctx.IDENTIFIER().GetText()
 
@@ -233,6 +302,34 @@ func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObje
     }
 
 	t.methodBuilder.WriteString(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")))
+}
+
+// EnterPackageDeclaration is called when entering the packageDeclaration production.
+// It generates the Go code for the package declaration in the form of "package <packageName>".
+func (t *TranspilerListener) EnterPackageDeclaration(ctx *parser.PackageDeclarationContext) {
+	t.structBuilder.WriteString(fmt.Sprintf("package %s\n\n", ctx.IDENTIFIER().GetText()))
+}
+
+// EnterImportsDeclaration is called when entering the importsDeclaration production.
+// It processes the list of import strings and generates the Go code for the import
+// declaration in the form of "import (<list of import strings>)".
+func (t *TranspilerListener) EnterImportsDeclaration(ctx *parser.ImportsDeclarationContext) {
+	if len(ctx.AllSTRING()) == 0 {
+		panic("No imports found")
+		return
+	}
+
+	if len(ctx.AllSTRING()) == 1 {
+		t.structBuilder.WriteString(fmt.Sprintf("import %s\n\n", ctx.STRING(0).GetText()))
+		return
+	}
+
+	var importList []string
+	for _, importCtx := range ctx.AllSTRING() {
+		importList = append(importList, importCtx.GetText())
+	}
+
+	t.structBuilder.WriteString(fmt.Sprintf("import (\n    %s\n)\n\n", strings.Join(importList, "\n    ")))
 }
 
 func (t *TranspilerListener) ExitCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
