@@ -24,7 +24,7 @@ interfaceMethod
     ;
 
 classDeclaration
-    : 'class' IDENTIFIER ( 'use' compositionList )? classBody
+    : 'class' IDENTIFIER ( 'use' compositionList )? ('must' mustInterfaceList)? classBody
     ;
 
 packageDeclaration
@@ -41,6 +41,10 @@ createObjectDeclaration
     ;
 
 compositionList
+    : IDENTIFIER ( ',' IDENTIFIER )*
+    ;
+
+mustInterfaceList
     : IDENTIFIER ( ',' IDENTIFIER )*
     ;
 

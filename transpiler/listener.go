@@ -49,7 +49,15 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 			compName := compCtx.GetText()
 			t.structBuilder.WriteString(fmt.Sprintf("\t%s\n", compName))
 
-			CurrentClass.AddUse(compName)
+			CurrentClass.AddUse(*ClassInfoMap[compName])
+		}
+	}
+
+	if ctx.MustInterfaceList() != nil {
+		for _, interfaceCtx := range ctx.MustInterfaceList().AllIDENTIFIER() {
+			interfaceName := interfaceCtx.GetText()	
+
+			CurrentClass.AddMustInterfaceList(*InterfaceInfoMap[interfaceName])			
 		}
 	}
 }
@@ -74,6 +82,10 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 	}
 
 	// CurrentClass.PrintClassInfo()
+
+	if !CurrentClass.ImplementsAllInterfaces() {
+		panic(fmt.Sprintf("Class '%s' does not implement all interfaces on 'must' list\n", CurrentClass.Name))
+	}
 	
 	CurrentClass = nil
 }
