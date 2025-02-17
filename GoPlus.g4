@@ -98,6 +98,11 @@ statement
     : assignment
     | methodCall
     | returnOperation
+    | varStatement
+    ;
+
+negationExpression
+    : '!' expression
     ;
 
 assignment
@@ -118,10 +123,22 @@ assignmentOperator
     | '-='
     | '<<='
     | '>>='
-    | '>>>='
     | '&='
     | '^='
     | '|='
+    ;
+
+comparisonOperator
+    : '=='
+    | '!='
+    | '>'
+    | '<'
+    | '>='
+    | '<='
+    ;
+
+comparison
+    : leftHandSide comparisonOperator expression
     ;
 
 methodCall
@@ -140,10 +157,21 @@ expression
     | STRING
     | NUMBER
     | leftHandSide
+    | negationExpression
+    | comparison
     ;
 
 returnOperation
     : 'return' argumentList?
+    ;
+
+varStatement
+    : 'var' IDENTIFIER STAR? IDENTIFIER ('=' expression)?
+    | 'var' IDENTIFIER ':=' expression
+    ;
+
+ifStatement
+    : 'if' (assignment ';')? expression block ( 'else' ( ifStatement | block ) )?
     ;
 
 // Tokens

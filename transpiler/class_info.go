@@ -162,7 +162,7 @@ func (c *ClassInfo) ImplementsAllInterfaces() bool {
 				continue
 			}
 
-			fmt.Printf(classMethod.Signature() + "\n" + interfaceMethod.Signature() + "\n")
+			// fmt.Printf(classMethod.Signature() + "\n" + interfaceMethod.Signature() + "\n")
 		}
 	}
 
