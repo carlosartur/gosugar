@@ -99,6 +99,8 @@ statement
     | methodCall
     | returnOperation
     | varStatement
+    | ifStatement
+    | elseStatement
     ;
 
 negationExpression
@@ -171,7 +173,11 @@ varStatement
     ;
 
 ifStatement
-    : 'if' (assignment ';')? expression block ( 'else' ( ifStatement | block ) )?
+    : 'if' (assignment ';')? expression block elseStatement?
+    ;
+
+elseStatement
+    : 'else' (ifStatement | block)
     ;
 
 // Tokens

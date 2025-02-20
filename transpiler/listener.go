@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/antlr4-go/antlr/v4"
 	"gopp-parser/parser" // Replace with the path to the generated parser
+
+	"reflect"
+
+	"github.com/antlr4-go/antlr/v4"
 )
 
 // ClassInfoMap maps class names to their associated ClassInfo instances
@@ -23,9 +26,9 @@ var indentationMethod Indentation = 0
 
 // TranspilerListener implements the custom listener
 type TranspilerListener struct {
-	*parser.BaseGoPlusListener // Inherits from the generated base listener
-	structBuilder strings.Builder // For struct composition and attributes
-	methodBuilder strings.Builder // For method declarations and bodies
+	*parser.BaseGoPlusListener                 // Inherits from the generated base listener
+	structBuilder              strings.Builder // For struct composition and attributes
+	methodBuilder              strings.Builder // For method declarations and bodies
 }
 
 func (t *TranspilerListener) AddStringToStruct(str string) {
@@ -69,9 +72,9 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 
 	if ctx.MustInterfaceList() != nil {
 		for _, interfaceCtx := range ctx.MustInterfaceList().AllIDENTIFIER() {
-			interfaceName := interfaceCtx.GetText()	
+			interfaceName := interfaceCtx.GetText()
 
-			CurrentClass.AddMustInterfaceList(*InterfaceInfoMap[interfaceName])			
+			CurrentClass.AddMustInterfaceList(*InterfaceInfoMap[interfaceName])
 		}
 	}
 }
@@ -83,13 +86,13 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 	t.AddStringToStruct("}\n\n") // Finalizes the struct
 
 	ClassInfoMap[CurrentClass.Name] = CurrentClass
-	
+
 	if !CurrentClass.HasConstructor() {
 		t.AddStringToStruct(fmt.Sprintf(
 			"func (%s) Constructor() *%s {\n"+
 				"    this := new(%s)\n"+
 				"    return this\n"+
-			"}\n\n",
+				"}\n\n",
 			CurrentClass.Name,
 			CurrentClass.Name,
 			CurrentClass.Name,
@@ -101,7 +104,7 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 	if !CurrentClass.ImplementsAllInterfaces() {
 		panic(fmt.Sprintf("Class '%s' does not implement all interfaces on 'must' list\n", CurrentClass.Name))
 	}
-	
+
 	CurrentClass = nil
 }
 
@@ -113,7 +116,7 @@ func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationCo
 func (t *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationContext) {
 	fieldName := ctx.IDENTIFIER(0).GetText()
 	fieldType := ctx.IDENTIFIER(1).GetText()
-	
+
 	if ctx.STAR() != nil {
 		fieldType = "*" + fieldType
 	}
@@ -130,9 +133,9 @@ func (t *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationC
 //
 // For constructors, the listener will generate the Go code:
 //
-// func New<ClassName>(<params>) *<ClassName> {
-//     this := new(<ClassName>)
-// }
+//	func New<ClassName>(<params>) *<ClassName> {
+//	    this := new(<ClassName>)
+//	}
 //
 // For regular methods, the listener will generate the Go code:
 //
@@ -156,13 +159,13 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 		}
 		parent = parent.GetParent()
 	}
-	
+
 	if className == "" {
 		t.methodBuilder.WriteString(fmt.Sprintf("func %s(", methodName))
 	} else {
 		isStatic := ctx.STATIC() != nil
 
-		if methodName == "Constructor" || isStatic {	
+		if methodName == "Constructor" || isStatic {
 			t.methodBuilder.WriteString(fmt.Sprintf("func (%s) %s(", className, methodName))
 		} else {
 			t.methodBuilder.WriteString(fmt.Sprintf("func (this *%s) %s(", className, methodName))
@@ -174,20 +177,20 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	if ctx.ParameterList() != nil {
 		for _, paramCtx := range ctx.ParameterList().AllParameter() {
 			paramName := paramCtx.IDENTIFIER(0).GetText()
-			
+
 			if paramCtx.IDENTIFIER(1) != nil {
 				paramType := paramCtx.IDENTIFIER(1).GetText()
 
 				if paramCtx.STAR() != nil {
 					paramType = "*" + paramType
 				}
-	
+
 				params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
-	
-				method.AddArg(paramName, paramType)	
+
+				method.AddArg(paramName, paramType)
 				continue
 			}
-			
+
 			params = append(params, paramName)
 
 			method.AddArg(paramName, ``)
@@ -236,7 +239,6 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	}
 }
 
-
 // ExitMethodDeclaration is called when exiting the methodDeclaration production.
 // It retrieves the method name and finalizes the method's Go code representation.
 // For constructors, it appends a return statement returning the constructed instance.
@@ -256,18 +258,18 @@ func (t *TranspilerListener) ExitMethodDeclaration(ctx *parser.MethodDeclaration
 // writes a line of code to the method builder in the form of
 // "this.<varName> = <expr>".
 func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
-    // Process the left-hand side (lhs) of the assignment
-    var lhs string
+	// Process the left-hand side (lhs) of the assignment
+	var lhs string
 	var operation string
 	var expr string
 
-    // Traverse the leftHandSide tree
-    if ctx.LeftHandSide() != nil {
-        lhs = ctx.LeftHandSide().GetText()
-    } else {
-        fmt.Println("No left-hand side found in the assignment.")
-        return
-    }
+	// Traverse the leftHandSide tree
+	if ctx.LeftHandSide() != nil {
+		lhs = ctx.LeftHandSide().GetText()
+	} else {
+		fmt.Println("No left-hand side found in the assignment.")
+		return
+	}
 
 	if ctx.AssignmentOperator() != nil {
 		operation = ctx.AssignmentOperator().GetText()
@@ -297,11 +299,11 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 		}
 		t.AddStringToMethod(fmt.Sprintf("return %s\n", strings.Join(args, ", ")))
 
-        // expr := ctx.Expression().GetText()
-        // t.methodBuilder.WriteString(fmt.Sprintf("return %s\n", expr))
-    } else {
-        t.AddStringToMethod("return\n")
-    }
+		// expr := ctx.Expression().GetText()
+		// t.methodBuilder.WriteString(fmt.Sprintf("return %s\n", expr))
+	} else {
+		t.AddStringToMethod("return\n")
+	}
 }
 
 // EnterMethodCallExpression is called when entering the methodCall production.
@@ -311,23 +313,23 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
 
-    // Verifica se o método é um IDENTIFIER simples
-    if ctx.IDENTIFIER() != nil {
-        methodName = ctx.IDENTIFIER().GetText()
-    } else if ctx.LeftHandSide() != nil { // Caso contrário, trata como um leftHandSide
-        methodName = ctx.LeftHandSide().GetText()
-    } else {
-        panic("methodCall: neither IDENTIFIER nor leftHandSide is present")
-    }
+	// Verifica se o método é um IDENTIFIER simples
+	if ctx.IDENTIFIER() != nil {
+		methodName = ctx.IDENTIFIER().GetText()
+	} else if ctx.LeftHandSide() != nil { // Caso contrário, trata como um leftHandSide
+		methodName = ctx.LeftHandSide().GetText()
+	} else {
+		panic("methodCall: neither IDENTIFIER nor leftHandSide is present")
+	}
 
-    args := []string{}
-    if ctx.ArgumentList() != nil {
-        for _, arg := range ctx.ArgumentList().AllExpression() {
-            args = append(args, arg.GetText())
-        }
-    }
+	args := []string{}
+	if ctx.ArgumentList() != nil {
+		for _, arg := range ctx.ArgumentList().AllExpression() {
+			args = append(args, arg.GetText())
+		}
+	}
 
-    t.AddStringToMethod(fmt.Sprintf("%s(%s)\n", methodName, strings.Join(args, ", ")))
+	t.AddStringToMethod(fmt.Sprintf("%s(%s)\n", methodName, strings.Join(args, ", ")))
 }
 
 // EnterCreateObjectDeclaration is called when entering the createObjectDeclaration production.
@@ -336,12 +338,12 @@ func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
 	className := ctx.IDENTIFIER().GetText()
 
-    args := []string{}
-    if ctx.ArgumentList() != nil {
-        for _, arg := range ctx.ArgumentList().AllExpression() {
-            args = append(args, arg.GetText())
-        }
-    }
+	args := []string{}
+	if ctx.ArgumentList() != nil {
+		for _, arg := range ctx.ArgumentList().AllExpression() {
+			args = append(args, arg.GetText())
+		}
+	}
 
 	t.methodBuilder.WriteString(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")))
 }
@@ -400,7 +402,7 @@ func (t *TranspilerListener) EnterInterfaceDeclaration(ctx *parser.InterfaceDecl
 func (t *TranspilerListener) ExitInterfaceDeclaration(ctx *parser.InterfaceDeclarationContext) {
 	indentationStruct.Decrement()
 	t.structBuilder.WriteString("}\n\n")
-	
+
 	InterfaceInfoMap[CurrentInterface.Name] = CurrentInterface
 
 	CurrentInterface = nil
@@ -502,6 +504,82 @@ func (t *TranspilerListener) EnterVarStatement(ctx *parser.VarStatementContext) 
 
 }
 
+// EnterIfStatement is called when entering the ifStatement production.
+//
+// It generates the Go code for an if statement. If the if statement has an
+// assignment, it is included in the generated code. Otherwise, the if statement
+// must have an expression. If the expression is not present, a panic is triggered.
+//
+// The listener also increments the indentation level for the method to correctly
+// indent the if statement's body.
+func (t *TranspilerListener) EnterIfStatement(ctx *parser.IfStatementContext) {
+	isElseIf := ctx.GetParent() != nil && reflect.TypeOf(ctx.GetParent()).String() == "*parser.ElseStatementContext"
+
+	if isElseIf {
+		t.methodBuilder.WriteString("if ")
+	} else {
+		t.AddStringToMethod("if ")
+	}
+
+	if ctx.Assignment() != nil {
+		t.methodBuilder.WriteString(ctx.Assignment().GetText() + ";")
+	}
+
+	if ctx.Expression() != nil {
+		t.methodBuilder.WriteString(ctx.Expression().GetText())
+	} else {
+		panic(fmt.Sprintf(`if must have expression`))
+	}
+
+	t.methodBuilder.WriteString(" {\n")
+
+	indentationMethod.Increment()
+}
+
+// ExitIfStatement is called when exiting the ifStatement production.
+//
+// It decrements the indentation level to correctly indent any code following the
+// if statement and adds a closing brace to the method builder.
+func (t *TranspilerListener) ExitIfStatement(ctx *parser.IfStatementContext) {
+	indentationMethod.Decrement()
+
+	if ctx.ElseStatement() == nil {
+		t.AddStringToMethod("}\n")
+	}
+}
+
+// EnterElseStatement is called when entering the elseStatement production.
+//
+// It decrements the indentation level and appends "} else " to the method builder.
+// If the else statement has an if statement, it decrements the indentation level.
+// Otherwise, it appends "{\n" to the method builder and increments the indentation
+// level.
+func (t *TranspilerListener) EnterElseStatement(ctx *parser.ElseStatementContext) {
+	indentationMethod.Decrement()
+
+	t.AddStringToMethod("} else ")
+
+	if ctx.IfStatement() != nil {
+		indentationMethod.Decrement()
+	} else {
+		t.methodBuilder.WriteString("{\n")
+	}
+
+	indentationMethod.Increment()
+}
+
+// ExitElseStatement is called when exiting the elseStatement production.
+// It decrements the indentation level to correctly indent any code following
+// the else statement. If the else statement does not contain an if statement,
+// it appends a closing brace to the method builder.
+func (t *TranspilerListener) ExitElseStatement(ctx *parser.ElseStatementContext) {
+	indentationMethod.Decrement()
+
+	if ctx.IfStatement() == nil {
+		t.AddStringToMethod("}\n")
+	}
+}
+
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
 }
@@ -519,7 +597,7 @@ func (t *TranspilerListener) VisitTerminal(node antlr.TerminalNode) {
 }
 
 type GetTextInterface interface {
-    GetText() string
+	GetText() string
 }
 
 func DebugContext(ctx interface{}) {
