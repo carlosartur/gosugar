@@ -40,6 +40,10 @@ createObjectDeclaration
     : CREATE IDENTIFIER '(' argumentList? ')'
     ;
 
+sliceDeclaration
+    : '[]' IDENTIFIER '{' (primaryExpression (',' primaryExpression)*)? '}'
+    ;
+
 compositionList
     : IDENTIFIER ( ',' IDENTIFIER )*
     ;
@@ -98,9 +102,14 @@ statement
     : assignment
     | methodCall
     | returnOperation
+    | continueOperation
+    | breakOperation
     | varStatement
     | ifStatement
     | elseStatement
+    | forStatement
+    | foreachStatement
+    | incrementOrDecrementStatement
     ;
 
 negationExpression
@@ -139,10 +148,6 @@ comparisonOperator
     | '<='
     ;
 
-comparison
-    : leftHandSide comparisonOperator expression
-    ;
-
 methodCall
     : IDENTIFIER '(' argumentList? ')'
     | leftHandSide '(' argumentList? ')'
@@ -153,18 +158,42 @@ argumentList
     ;
 
 expression
+    : primaryExpression (operatorExpression)*
+    ;
+
+primaryExpression
     : createObjectDeclaration
+    | sliceDeclaration
     | methodCall
     | IDENTIFIER
     | STRING
     | NUMBER
     | leftHandSide
     | negationExpression
-    | comparison
+    | '(' expression ')'
     ;
+
+operatorExpression
+    : ('*' | '/' | '%') primaryExpression
+    | ('+' | '-') primaryExpression
+    | comparisonOperator primaryExpression
+    ;
+
+comparison
+    : primaryExpression comparisonOperator primaryExpression
+    ;
+
 
 returnOperation
     : 'return' argumentList?
+    ;
+
+continueOperation
+    : 'continue' IDENTIFIER?
+    ;
+
+breakOperation
+    : 'break' IDENTIFIER?
     ;
 
 varStatement
@@ -180,6 +209,44 @@ elseStatement
     : 'else' (ifStatement | block)
     ;
 
+incrementOrDecrementStatement
+    : IDENTIFIER ('++' | '--')
+    ;
+
+forStatement
+    : 'for' (classicForLoop | rangeForLoop | conditionForLoop | infiniteForLoop) block
+    ;
+
+classicForLoop
+    : simpleStatement? ';' expression? ';' simpleStatement?
+    ;
+
+rangeForLoop
+    : (expressionList ':=')? 'range' expression
+    ;
+
+conditionForLoop
+    : expression
+    ;
+
+infiniteForLoop
+    : // Nenhuma condição, apenas 'for' e um bloco de código
+    ;
+
+simpleStatement
+    : assignment
+    | expression
+    | incrementOrDecrementStatement
+    ;
+
+expressionList
+    : expression (',' expression)*
+    ;
+
+foreachStatement
+    : 'foreach' expression 'as' IDENTIFIER (',' IDENTIFIER)? block
+    ;
+
 // Tokens
 STAR: '*';
 CREATE: 'create';
@@ -187,7 +254,10 @@ STATIC: 'static';
 IDENTIFIER: [a-zA-Z_][a-zA-Z_0-9]*;
 NUMBER: [0-9]+ ('.' [0-9]+)?;
 DOT: '.';
-STRING: '"' (ESC | ~('\\' | '"'))* '"'; // Regra para strings
+STRING: ('"' (ESC | ~('\\' | '"'))* '"') 
+      | ('\'' (ESC | ~('\\' | '\''))* '\'') 
+      | ('`' ~'`'* '`');
+
 fragment ESC: '\\' (["\\/bfnrt']|UNICODE);
 fragment UNICODE: 'u' HEX HEX HEX HEX;
 fragment HEX: [0-9a-fA-F];

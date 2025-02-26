@@ -263,6 +263,13 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 	var operation string
 	var expr string
 
+	if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
+		ssParent := ctx.GetParent().GetParent().GetParent()
+		if _, isFor := ssParent.(*parser.ForStatementContext); isFor {
+			return
+		}
+	}
+
 	// Traverse the leftHandSide tree
 	if ctx.LeftHandSide() != nil {
 		lhs = ctx.LeftHandSide().GetText()
@@ -277,7 +284,7 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 		operation = "="
 	}
 
-	createObjDeclaration := ctx.Expression().CreateObjectDeclaration()
+	createObjDeclaration := ctx.Expression().PrimaryExpression().CreateObjectDeclaration()
 
 	if createObjDeclaration != nil {
 		t.AddStringToMethod(fmt.Sprintf("%s %s ", lhs, operation))
@@ -312,6 +319,12 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 // "<methodName>(<args>)".
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
+
+	isAssignmentContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.AssignmentContext"
+
+	if isAssignmentContext {
+		return
+	}
 
 	// Verifica se o método é um IDENTIFIER simples
 	if ctx.IDENTIFIER() != nil {
@@ -360,7 +373,6 @@ func (t *TranspilerListener) EnterPackageDeclaration(ctx *parser.PackageDeclarat
 func (t *TranspilerListener) EnterImportsDeclaration(ctx *parser.ImportsDeclarationContext) {
 	if len(ctx.AllSTRING()) == 0 {
 		panic("No imports found")
-		return
 	}
 
 	if len(ctx.AllSTRING()) == 1 {
@@ -580,6 +592,140 @@ func (t *TranspilerListener) ExitElseStatement(ctx *parser.ElseStatementContext)
 	}
 }
 
+// EnterSliceDeclaration is called when entering the sliceDeclaration production.
+// It generates the Go code for a slice declaration by writing a line of code
+// to the method builder in the form of "var <sliceName> []<elementType>".
+func (t *TranspilerListener) EnterSliceDeclaration(ctx *parser.SliceDeclarationContext) {
+	slcType := ctx.IDENTIFIER().GetText()
+	values := []string{}
+
+	isAssignmentContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.AssignmentContext"
+
+	if isAssignmentContext {
+		return
+	}
+
+	for _, expr := range ctx.AllPrimaryExpression() {
+		values = append(values, expr.GetText())
+	}
+
+	t.methodBuilder.WriteString(fmt.Sprintf("[]%s{%s}\n", slcType, strings.Join(values, ", ")))
+}
+
+// EnterForStatement is called when entering the forStatement production.
+// It writes a line of code to the method builder in the form of "for"
+// followed by the loop condition and increments the indentation level.
+// It then writes a line of code to the method builder depending on the type
+// of for loop encountered.
+//
+// The following cases are handled:
+// - ClassicForLoop: writes the initialization statement, condition, and post-loop
+// statement to the method builder.
+// - RangeForLoop: writes the range keyword followed by the iterable expression
+// to the method builder.
+// - ConditionForLoop: writes the condition expression to the method builder.
+// - InfiniteForLoop: writes a comment to the method builder indicating an infinite
+// loop.
+func (t *TranspilerListener) EnterForStatement(ctx *parser.ForStatementContext) {
+	t.AddStringToMethod("for ")
+	indentationMethod.Increment()
+
+	switch true {
+	case ctx.ClassicForLoop() != nil:
+		if ctx.ClassicForLoop().SimpleStatement(0) != nil {
+			t.methodBuilder.WriteString(ctx.ClassicForLoop().SimpleStatement(0).GetText())
+		}
+		t.methodBuilder.WriteString("; ")
+
+		if ctx.ClassicForLoop().Expression() != nil {
+			t.methodBuilder.WriteString(ctx.ClassicForLoop().Expression().GetText())
+		}
+		t.methodBuilder.WriteString("; ")
+
+		if ctx.ClassicForLoop().SimpleStatement(1) != nil {
+			t.methodBuilder.WriteString(ctx.ClassicForLoop().SimpleStatement(1).GetText())
+		}
+
+	case ctx.RangeForLoop() != nil:
+		if ctx.RangeForLoop().ExpressionList() != nil {
+			t.methodBuilder.WriteString(ctx.RangeForLoop().ExpressionList().GetText() + " := ")
+		}
+
+		t.methodBuilder.WriteString(" range ")
+		if ctx.RangeForLoop().Expression() != nil {
+			t.methodBuilder.WriteString(ctx.RangeForLoop().Expression().GetText())
+		}
+
+	case ctx.ConditionForLoop() != nil:
+		if ctx.ConditionForLoop().Expression() != nil {
+			t.methodBuilder.WriteString(ctx.ConditionForLoop().Expression().GetText())
+		}
+
+	case ctx.InfiniteForLoop() != nil:
+		t.methodBuilder.WriteString("/* Infinite for loop */")
+	}
+
+	t.methodBuilder.WriteString(" {\n")
+}
+
+// ExitForStatement is called when exiting the forStatement production.
+// It decrements the indentation level and appends a closing brace to the method builder.
+func (t *TranspilerListener) ExitForStatement(ctx *parser.ForStatementContext) {
+	indentationMethod.Decrement()
+
+	t.AddStringToMethod("}\n")
+}
+
+// EnterForeachStatement is called when entering the foreachStatement production.
+// It generates the Go code for a foreach statement by writing a line of code
+// to the method builder in the form of "for <key>, <value> := range <collection> {".
+// The listener also increments the indentation level for the method to correctly
+// indent the foreach statement's body.
+func (t *TranspilerListener) EnterForeachStatement(ctx *parser.ForeachStatementContext) {
+	collection := ctx.Expression().GetText()
+	keyOrValue := ctx.IDENTIFIER(0)
+	valueOnly := ctx.IDENTIFIER(1)
+
+	if valueOnly == nil {
+		t.AddStringToMethod(fmt.Sprintf("for _, %s := range %s {\n", keyOrValue, collection))
+	} else {
+		t.AddStringToMethod(fmt.Sprintf("for %s, %s := range %s {\n", keyOrValue, valueOnly, collection))
+	}
+
+	indentationMethod.Increment()
+}
+
+// ExitForeachStatement is called when exiting the foreachStatement production.
+// It decrements the indentation level and appends a closing brace to the method builder.
+func (t *TranspilerListener) ExitForeachStatement(ctx *parser.ForeachStatementContext) {
+	indentationMethod.Decrement()
+	t.AddStringToMethod("}\n")
+}
+
+// EnterContinueOperation is called when entering the continueOperation production.
+// It generates the Go code for a continue statement, optionally including a
+// label if specified.
+func (t *TranspilerListener) EnterContinueOperation(ctx *parser.ContinueOperationContext) {
+	if ctx.IDENTIFIER() != nil {
+		t.AddStringToMethod(fmt.Sprintf("continue %s\n", ctx.IDENTIFIER().GetText()))
+		return
+	}
+
+	t.AddStringToMethod("continue\n")
+}
+
+// EnterBreakOperation is called when entering the breakOperation production.
+// It generates the Go code for a break statement, optionally including a
+// label if specified.
+func (t *TranspilerListener) EnterBreakOperation(ctx *parser.BreakOperationContext) {
+	if ctx.IDENTIFIER() != nil {
+		t.AddStringToMethod(fmt.Sprintf("break %s\n", ctx.IDENTIFIER().GetText()))
+		return
+	}
+
+	t.AddStringToMethod("break\n")
+}
+
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
 }
@@ -609,4 +755,16 @@ func DebugContext(ctx interface{}) {
 	if ok {
 		fmt.Println(ctx.(GetTextInterface).GetText())
 	}
+
+	t := reflect.TypeOf(ctx)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	fmt.Println("\nMethods:\n")
+	for i := 0; i < t.NumMethod(); i++ {
+		method := t.Method(i)
+		fmt.Printf("- %s (%v)\n", method.Name, method.Type)
+	}
+
 }
