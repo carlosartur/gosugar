@@ -1,16 +1,17 @@
 package main
 
 import (
-    "fmt"
 	"flag"
+	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
-    "github.com/antlr4-go/antlr/v4"
-    "gopp-parser/parser"
+	"gopp-parser/config"
+	"gopp-parser/parser"
 	"gopp-parser/transpiler"
+
+	"github.com/antlr4-go/antlr/v4"
 )
 
 // Função para validar se um caminho é um diretório
@@ -23,8 +24,14 @@ func isDirectory(path string) bool {
 }
 
 // Função transpiller que converte o código e escreve em um arquivo .go
-func transpiller(filePath string, content string) error {
-	input := antlr.NewInputStream(content)
+func transpiller(filePath, basePath, outputDir string) error {
+
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("error reading file %s: %v", filePath, err)
+	}
+
+	input := antlr.NewInputStream(string(content))
 
 	// Configuração do lexer e parser
 	lexer := parser.NewGoPlusLexer(input)
@@ -37,9 +44,22 @@ func transpiller(filePath string, content string) error {
 	tree := p.Program()
 	antlr.ParseTreeWalkerDefault.Walk(listener, tree)
 
-	// Gerar arquivo de saída .go
-	outputFilePath := filePath[:len(filePath)-len(filepath.Ext(filePath))] + ".go"
-	err := ioutil.WriteFile(outputFilePath, []byte(listener.GoCode()), 0644)
+	// Preservar a estrutura de diretórios no outputDir
+	relPath, err := filepath.Rel(basePath, filepath.Dir(filePath))
+	if err != nil {
+		return fmt.Errorf("error getting relative path: %v", err)
+	}
+
+	outputPath := filepath.Join(outputDir, relPath)
+	if err := os.MkdirAll(outputPath, os.ModePerm); err != nil {
+		return fmt.Errorf("error creating output directory %s: %v", outputPath, err)
+	}
+
+	// Criar caminho do arquivo de saída
+	outputFilePath := filepath.Join(outputPath, filepath.Base(filePath[:len(filePath)-len(filepath.Ext(filePath))]+".go"))
+
+	// Escrever o arquivo
+	err = os.WriteFile(outputFilePath, []byte(listener.GoCode()), 0644)
 	if err != nil {
 		return fmt.Errorf("error writing to file %s: %v", outputFilePath, err)
 	}
@@ -48,22 +68,46 @@ func transpiller(filePath string, content string) error {
 	return nil
 }
 
-// Função para percorrer recursivamente os arquivos com extensão .gopp
+func readEnvFile(path string) ([]byte, error) {
+	envFilePath := filepath.Join(path, ".gopp.env")
+	if _, err := os.Stat(envFilePath); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	content, err := os.ReadFile(envFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("error reading .gopp.env file in %s: %v", path, err)
+	}
+
+	return content, nil
+}
+
 func processDirectory(path string) error {
+	// Ler configurações do .gopp.env
+	content, enverr := readEnvFile(path)
+	if enverr == nil && content != nil {
+		config.CurrentConfigs.SetEnvContent(string(content))
+	}
+
+	// Obter o diretório de saída da configuração
+	outputDir := filepath.Join(path, config.CurrentConfigs.Get("TRANSPILE_PATH"))
+	if outputDir == "" {
+		outputDir = filepath.Join(path, "dist") // Padrão se não estiver definido
+	}
+
 	err := filepath.WalkDir(path, func(filePath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		// Verificar se o arquivo tem a extensão .gopp
 		if !d.IsDir() && filepath.Ext(filePath) == ".gopp" {
-			content, err := ioutil.ReadFile(filePath)
+			fmt.Println("Transpiling:", filePath)
+			_, err := os.ReadFile(filePath)
 			if err != nil {
 				return fmt.Errorf("error reading file %s: %v", filePath, err)
 			}
 
-			// Chamar a função transpiller
-			err = transpiller(filePath, string(content))
+			err = transpiller(filePath, path, outputDir)
 			if err != nil {
 				return err
 			}
