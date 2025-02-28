@@ -44,6 +44,10 @@ sliceDeclaration
     : '[]' IDENTIFIER '{' (primaryExpression (',' primaryExpression)*)? '}'
     ;
 
+listAccess
+    : leftHandSide '[' expression ']'
+    ;
+
 compositionList
     : IDENTIFIER ( ',' IDENTIFIER )*
     ;
@@ -61,8 +65,15 @@ classMember
     | methodDeclaration
     ;
 
+varType
+    : STAR? IDENTIFIER
+    | STAR? '[]' varType
+    | STAR? '[' NUMBER? ']' varType
+    | STAR? 'map' '[' varType ']' varType
+    ;
+
 fieldDeclaration
-    : IDENTIFIER STAR? IDENTIFIER
+    : IDENTIFIER varType
     ;
 
 methodDeclaration
@@ -71,7 +82,7 @@ methodDeclaration
 
 returnType
     : '(' returnTypeList ')'
-    | STAR? IDENTIFIER
+    | varType
     ;
 
 returnTypeList
@@ -79,7 +90,7 @@ returnTypeList
     ;
 
 returnTypeSingle
-    : STAR? IDENTIFIER
+    : varType
     ;
 
 parameterList
@@ -91,7 +102,7 @@ methodBody
     ;
 
 parameter
-    : IDENTIFIER STAR? IDENTIFIER?
+    : IDENTIFIER varType?
     ;
 
 block
@@ -182,8 +193,14 @@ primaryExpression
     | STRING
     | NUMBER
     | leftHandSide
+    | listLiteral
     | negationExpression
     | '(' expression ')'
+    | listAccess
+    ;
+
+listLiteral
+    : '{' expression (',' expression)* '}'
     ;
 
 operatorExpression
@@ -209,7 +226,7 @@ breakOperation
     ;
 
 varStatement
-    : 'var' IDENTIFIER STAR? IDENTIFIER ('=' expression)?
+    : 'var' IDENTIFIER varType ('=' expression)?
     | 'var' IDENTIFIER ':=' expression
     ;
 
