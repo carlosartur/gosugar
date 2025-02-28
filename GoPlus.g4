@@ -110,6 +110,19 @@ statement
     | forStatement
     | foreachStatement
     | incrementOrDecrementStatement
+    | switchStatement
+    ;
+
+switchStatement
+    : 'switch' expression '{' caseBlock* defaultBlock? '}'
+    ;
+
+caseBlock
+    : 'case' expressionList ':' statement*
+    ;
+
+defaultBlock
+    : 'default' ':' statement*
     ;
 
 negationExpression
@@ -182,7 +195,6 @@ operatorExpression
 comparison
     : primaryExpression comparisonOperator primaryExpression
     ;
-
 
 returnOperation
     : 'return' argumentList?
@@ -262,7 +274,6 @@ fragment ESC: '\\' (["\\/bfnrt']|UNICODE);
 fragment UNICODE: 'u' HEX HEX HEX HEX;
 fragment HEX: [0-9a-fA-F];
 
-
 // Ignorar espaços em branco
 WS: [ \t\r\n]+ -> skip;
 
@@ -275,4 +286,4 @@ LineComment
     ;
 
 // Final de instrução (implícito)
-NEWLINE: ';'; // Ou ('\r'? '\n' | ';') -> skip;
+NEWLINE: ';';

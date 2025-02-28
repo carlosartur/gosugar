@@ -726,6 +726,42 @@ func (t *TranspilerListener) EnterBreakOperation(ctx *parser.BreakOperationConte
 	t.AddStringToMethod("break\n")
 }
 
+func (t *TranspilerListener) EnterSwitchStatement(ctx *parser.SwitchStatementContext) {
+	t.AddStringToMethod("switch ")
+	if ctx.Expression() != nil {
+		t.methodBuilder.WriteString(ctx.Expression().GetText())
+	}
+	t.methodBuilder.WriteString(" {\n")
+	// indentationMethod.Increment()
+}
+
+func (t *TranspilerListener) ExitSwitchStatement(ctx *parser.SwitchStatementContext) {
+	// indentationMethod.Decrement()
+	t.AddStringToMethod("}\n")
+}
+
+func (t *TranspilerListener) EnterCaseBlock(ctx *parser.CaseBlockContext) {
+	t.AddStringToMethod("case ")
+	if ctx.ExpressionList() != nil {
+		t.methodBuilder.WriteString(ctx.ExpressionList().GetText())
+	}
+	t.methodBuilder.WriteString(":\n")
+	indentationMethod.Increment()
+}
+
+func (t *TranspilerListener) ExitCaseBlock(ctx *parser.CaseBlockContext) {
+	indentationMethod.Decrement()
+}
+
+func (t *TranspilerListener) EnterDefaultBlock(ctx *parser.DefaultBlockContext) {
+	t.AddStringToMethod("default:\n")
+	indentationMethod.Increment()
+}
+
+func (t *TranspilerListener) ExitDefaultBlock(ctx *parser.DefaultBlockContext) {
+	indentationMethod.Decrement()
+}
+
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
 }
