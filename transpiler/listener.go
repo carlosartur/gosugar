@@ -50,7 +50,7 @@ func (t *TranspilerListener) AddStringToStruct(str string, indent ...bool) {
 }
 
 func (t *TranspilerListener) AddStringToMethod(str string, indent ...bool) {
-	// fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
+	fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
 
 	indentValue := true
 	if len(indent) > 0 {
@@ -266,10 +266,12 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 		}
 	}
 
-	// Traverse the leftHandSide tree
-	if ctx.LeftHandSide() != nil {
+	switch true {
+	case ctx.LeftHandSide() != nil:
 		lhs = ctx.LeftHandSide().GetText()
-	} else {
+	case ctx.ListAccess() != nil:
+		lhs = ctx.ListAccess().GetText()
+	default:
 		fmt.Println("No left-hand side found in the assignment.")
 		return
 	}
@@ -314,9 +316,7 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
 
-	isAssignmentContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.AssignmentContext"
-
-	if isAssignmentContext {
+	if IsInside(ctx, "*parser.AssignmentContext") {
 		return
 	}
 
@@ -578,9 +578,7 @@ func (t *TranspilerListener) EnterSliceDeclaration(ctx *parser.SliceDeclarationC
 	slcType := ctx.IDENTIFIER().GetText()
 	values := []string{}
 
-	isAssignmentContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.AssignmentContext"
-
-	if isAssignmentContext {
+	if IsInside(ctx, "*parser.AssignmentContext") {
 		return
 	}
 
@@ -705,15 +703,23 @@ func (t *TranspilerListener) EnterBreakOperation(ctx *parser.BreakOperationConte
 	t.AddStringToMethod("break\n")
 }
 
+// EnterSwitchStatement is called when entering the switchStatement production.
+// It generates the Go code for a switch statement by writing "switch"
+// followed by the optional expression and an opening brace to the method builder.
 func (t *TranspilerListener) EnterSwitchStatement(ctx *parser.SwitchStatementContext) {
 	t.AddStringToMethod("switch ")
 	if ctx.Expression() != nil {
 		t.AddStringToMethod(ctx.Expression().GetText(), false)
 	}
 	t.AddStringToMethod(" {\n", false)
+
+	indentationMethod.Increment()
 }
 
+// ExitSwitchStatement is called when exiting the switchStatement production.
+// It appends a closing brace to the method builder to correctly close the switch block.
 func (t *TranspilerListener) ExitSwitchStatement(ctx *parser.SwitchStatementContext) {
+	indentationMethod.Decrement()
 	t.AddStringToMethod("}\n")
 }
 
@@ -727,19 +733,17 @@ func (t *TranspilerListener) EnterCaseBlock(ctx *parser.CaseBlockContext) {
 }
 
 func (t *TranspilerListener) EnterListAccess(ctx *parser.ListAccessContext) {
-	isArgumentListContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.ArgumentListContext"
-
-	if isArgumentListContext {
+	if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
 		return
 	}
+
+	fmt.Printf("%s\n", ctx.GetText())
 
 	t.AddStringToMethod(ctx.LeftHandSide().GetText()+"[", false)
 }
 
 func (t *TranspilerListener) ExitListAccess(ctx *parser.ListAccessContext) {
-	isArgumentListContext := ctx.GetParent().GetParent().GetParent() != nil && reflect.TypeOf(ctx.GetParent().GetParent().GetParent()).String() == "*parser.ArgumentListContext"
-
-	if isArgumentListContext {
+	if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
 		return
 	}
 
@@ -802,8 +806,34 @@ func DebugContext(ctx interface{}) {
 
 }
 
+func IsInside(ctx any, external ...string) bool {
+	for ctx != nil {
+		ctxType := reflect.TypeOf(ctx).String()
+
+		for _, ext := range external {
+			if ctxType == ext {
+				return true
+			}
+		}
+
+		_, exists := reflect.TypeOf(ctx).MethodByName("GetParent")
+		if !exists {
+			return false
+		}
+
+		parent := reflect.ValueOf(ctx).MethodByName("GetParent").Call(nil)
+		if len(parent) == 0 || parent[0].IsNil() {
+			return false
+		}
+
+		ctx = parent[0].Interface()
+	}
+
+	return false
+}
+
 func GetCaller() string {
-	pc, _, _, ok := runtime.Caller(2) // Pega a função 2 níveis acima na pilha de chamadas
+	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
 		return "Desconhecido"
 	}

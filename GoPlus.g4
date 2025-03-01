@@ -45,7 +45,7 @@ sliceDeclaration
     ;
 
 listAccess
-    : leftHandSide '[' expression ']'
+    : leftHandSide ('[' expression ']')*
     ;
 
 compositionList
@@ -141,7 +141,7 @@ negationExpression
     ;
 
 assignment
-    : leftHandSide assignmentOperator expression
+    : (leftHandSide | listAccess) assignmentOperator expression
     ;
 
 leftHandSide
@@ -199,8 +199,13 @@ primaryExpression
     | listAccess
     ;
 
+mapKeyValue
+    : expression ':' expression
+    ;
+
 listLiteral
     : '{' expression (',' expression)* '}'
+    | '{' mapKeyValue (',' mapKeyValue)* '}'
     ;
 
 operatorExpression
