@@ -24,7 +24,7 @@ interfaceMethod
     ;
 
 classDeclaration
-    : 'class' IDENTIFIER ( 'use' compositionList )? ('must' mustInterfaceList)? classBody
+    : 'class' IDENTIFIER ('as' aliasType)? ( 'use' compositionList )? ('must' mustInterfaceList)? classBody
     ;
 
 packageDeclaration
@@ -50,6 +50,10 @@ sliceOrArrayLiteral
 
 listAccess
     : leftHandSide ('[' expression ']')*
+    ;
+
+aliasType
+    : IDENTIFIER
     ;
 
 compositionList

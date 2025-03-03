@@ -78,16 +78,48 @@ func (t *TranspilerListener) GoCode() string {
 // types as fields.
 func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationContext) {
 	className := ctx.IDENTIFIER().GetText()
-	t.AddStringToStruct(fmt.Sprintf("type %s struct {\n", className))
+	aliasType := ctx.AliasType()
+
+	if aliasType != nil {
+		t.AddStringToStruct(fmt.Sprintf("type %s %s\n", className, aliasType.GetText()))
+		CurrentClass = &ClassInfo{
+			Name:  className,
+			Alias: aliasType.GetText(),
+		}
+	} else {
+		t.AddStringToStruct(fmt.Sprintf("type %s struct {\n", className))
+		CurrentClass = &ClassInfo{
+			Name: className,
+		}
+	}
 
 	indentationStruct.Increment()
 
-	CurrentClass = &ClassInfo{
-		Name: className,
-	}
-
 	// Add compositions, if they exist
 	if ctx.CompositionList() != nil {
+		if aliasType != nil {
+
+			panic(fmt.Sprintf(
+				"\nClass %s cannot have composition, because it is an alias of %s\n"+
+					"To do it, remove the alias type, or remove the composition\n\n"+
+					"    Current class declaration:\n"+
+					"        class %s as %s use %s \n\n"+
+					"    Fix option 1, removing type alias: \n"+
+					"        class %s use %s \n\n"+
+					"    Fix option 2, removing composition: \n"+
+					"        class %s as %s \n",
+				className,
+				aliasType.GetText(),
+				className,
+				aliasType.GetText(),
+				ctx.CompositionList().GetText(),
+				className,
+				ctx.CompositionList().GetText(),
+				className,
+				aliasType.GetText(),
+			))
+		}
+
 		for _, compCtx := range ctx.CompositionList().AllIDENTIFIER() {
 			compName := compCtx.GetText()
 			t.AddStringToStruct(fmt.Sprintf("%s\n", compName))
@@ -109,11 +141,16 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 // It finalizes the struct declaration by closing the brace and adding a newline.
 func (t *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclarationContext) {
 	indentationStruct.Decrement()
-	t.AddStringToStruct("}\n\n") // Finalizes the struct
+
+	if CurrentClass.Alias == "" {
+		t.AddStringToStruct("}\n")
+	}
+
+	t.AddStringToStruct("\n")
 
 	ClassInfoMap[CurrentClass.Name] = CurrentClass
 
-	if !CurrentClass.HasConstructor() {
+	if !CurrentClass.HasConstructor() && CurrentClass.Alias == "" {
 		t.AddStringToStruct(fmt.Sprintf(
 			"func (%s) Constructor() *%s {\n"+
 				"    this := new(%s)\n"+
@@ -350,6 +387,12 @@ func (t *TranspilerListener) EnterCreateObjectDeclaration(ctx *parser.CreateObje
 		for _, arg := range ctx.ArgumentList().AllExpression() {
 			args = append(args, arg.GetText())
 		}
+	}
+
+	calledClass := ClassInfoMap[className]
+	if calledClass != nil && calledClass.Alias != "" {
+		t.AddStringToMethod(fmt.Sprintf("%s(%s)", className, strings.Join(args, ", ")), false)
+		return
 	}
 
 	t.AddStringToMethod(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")), false)

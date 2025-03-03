@@ -13,6 +13,7 @@ type ClassInfo struct {
 	Uses []ClassInfo
 	Fields []Field
 	MustInterfaceList []InterfaceInfo
+	Alias string
 }
 
 func NewClassInfo(name string, methods []Method) *ClassInfo {
