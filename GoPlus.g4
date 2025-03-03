@@ -44,6 +44,10 @@ sliceDeclaration
     : '[]' IDENTIFIER '{' (primaryExpression (',' primaryExpression)*)? '}'
     ;
 
+sliceOrArrayLiteral
+    : '[' (primaryExpression (',' primaryExpression)*)? ']'
+    ;
+
 listAccess
     : leftHandSide ('[' expression ']')*
     ;
@@ -188,6 +192,7 @@ expression
 primaryExpression
     : createObjectDeclaration
     | sliceDeclaration
+    | sliceOrArrayLiteral
     | methodCall
     | IDENTIFIER
     | STRING
