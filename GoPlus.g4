@@ -145,7 +145,7 @@ defaultBlock
     ;
 
 negationExpression
-    : '!' expression
+    : '!' STAR? expression
     ;
 
 assignment
@@ -253,7 +253,7 @@ elseStatement
     ;
 
 incrementOrDecrementStatement
-    : IDENTIFIER ('++' | '--')
+    : STAR? IDENTIFIER ('++' | '--')
     ;
 
 forStatement

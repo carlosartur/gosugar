@@ -806,8 +806,23 @@ func (t *TranspilerListener) ExitDefaultBlock(ctx *parser.DefaultBlockContext) {
 	indentationMethod.Decrement()
 }
 
+func (t *TranspilerListener) EnterIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
+	if IsInside(ctx, "*parser.AssignmentContext") {
+		return
+	}
+
+	t.AddStringToMethod(ctx.GetText()+"\n")
+}
+
+func (t *TranspilerListener) ExitIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
+	if IsInside(ctx, "*parser.AssignmentContext") {
+		return
+	}
+}
+
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
+	// DebugContext(ctx)
 }
 
 func (t *TranspilerListener) ExitEveryRule(ctx antlr.ParserRuleContext) {
