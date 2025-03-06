@@ -111,6 +111,7 @@ methodBody
 
 parameter
     : IDENTIFIER varType?
+    | IDENTIFIER ELLIPSIS varType
     ;
 
 block
@@ -291,6 +292,7 @@ foreachStatement
     ;
 
 // Tokens
+ELLIPSIS: '...';
 STAR: '*';
 CREATE: 'create';
 STATIC: 'static';

@@ -236,6 +236,10 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 			paramName := paramCtx.IDENTIFIER().GetText()
 			paramType := paramCtx.VarType().GetText()
 
+			if paramCtx.ELLIPSIS() != nil {
+				paramType = "..." + paramType
+			}
+			
 			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
 			method.AddArg(paramName, paramType)
 		}
@@ -353,7 +357,7 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
 
-	if IsInside(ctx, "*parser.AssignmentContext") {
+	if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext") {
 		return
 	}
 
@@ -811,7 +815,7 @@ func (t *TranspilerListener) EnterIncrementOrDecrementStatement(ctx *parser.Incr
 		return
 	}
 
-	t.AddStringToMethod(ctx.GetText()+"\n")
+	t.AddStringToMethod(ctx.GetText() + "\n")
 }
 
 func (t *TranspilerListener) ExitIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
