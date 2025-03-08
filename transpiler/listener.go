@@ -239,7 +239,7 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 			if paramCtx.ELLIPSIS() != nil {
 				paramType = "..." + paramType
 			}
-			
+
 			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
 			method.AddArg(paramName, paramType)
 		}
@@ -297,8 +297,8 @@ func (t *TranspilerListener) ExitMethodDeclaration(ctx *parser.MethodDeclaration
 func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 	// Process the left-hand side (lhs) of the assignment
 	var lhs string
-	var operation string
 	var expr string
+	operation := "="
 
 	if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
 		ssParent := ctx.GetParent().GetParent().GetParent()
@@ -319,18 +319,21 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 
 	if ctx.AssignmentOperator() != nil {
 		operation = ctx.AssignmentOperator().GetText()
-	} else {
-		operation = "="
 	}
 
-	createObjDeclaration := ctx.Expression().PrimaryExpression().CreateObjectDeclaration()
+	showOnlyLhsAndOperation := ctx.Expression().PrimaryExpression().CreateObjectDeclaration() != nil ||
+		ctx.Expression().PrimaryExpression().AnonimousFunctionDeclaration() != nil
 
-	if createObjDeclaration != nil {
+	fmt.Printf("lhs: %s, operation: %s, expr: %s, showOnlyLhsAndOperation: %v\n", lhs, operation, expr, showOnlyLhsAndOperation)
+
+	if showOnlyLhsAndOperation {
 		t.AddStringToMethod(fmt.Sprintf("%s %s ", lhs, operation))
-	} else {
-		expr = ctx.Expression().GetText()
-		t.AddStringToMethod(fmt.Sprintf("%s %s %s\n", lhs, operation, expr))
+		return
 	}
+
+	expr = ctx.Expression().GetText()
+	t.AddStringToMethod(fmt.Sprintf("%s %s %s\n", lhs, operation, expr))
+
 }
 
 // EnterReturnOperation is called when entering the returnOperation production.
@@ -345,9 +348,11 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 		}
 		t.AddStringToMethod(fmt.Sprintf("return %s\n", strings.Join(args, ", ")))
 
-	} else {
-		t.AddStringToMethod("return\n")
+		return
+
 	}
+
+	t.AddStringToMethod("return\n")
 }
 
 // EnterMethodCallExpression is called when entering the methodCall production.
@@ -357,14 +362,13 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
 
-	if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext") {
+	if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
 		return
 	}
 
-	// Verifica se o método é um IDENTIFIER simples
 	if ctx.IDENTIFIER() != nil {
 		methodName = ctx.IDENTIFIER().GetText()
-	} else if ctx.LeftHandSide() != nil { // Caso contrário, trata como um leftHandSide
+	} else if ctx.LeftHandSide() != nil {
 		methodName = ctx.LeftHandSide().GetText()
 	} else {
 		panic("methodCall: neither IDENTIFIER nor leftHandSide is present")
@@ -512,6 +516,9 @@ func (t *TranspilerListener) EnterInterfaceMethod(ctx *parser.InterfaceMethodCon
 	CurrentInterface.AddMethod(*method)
 }
 
+// ExitInterfaceMethod is called when exiting the interfaceMethod production.
+// It adds a newline to the struct builder to separate the interface method
+// declaration from any subsequent code.
 func (t *TranspilerListener) ExitInterfaceMethod(ctx *parser.InterfaceMethodContext) {
 	t.AddStringToStruct("\n")
 }
@@ -625,7 +632,7 @@ func (t *TranspilerListener) EnterSliceDeclaration(ctx *parser.SliceDeclarationC
 	slcType := ctx.IDENTIFIER().GetText()
 	values := []string{}
 
-	if IsInside(ctx, "*parser.AssignmentContext") {
+	if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
 		return
 	}
 
@@ -770,6 +777,10 @@ func (t *TranspilerListener) ExitSwitchStatement(ctx *parser.SwitchStatementCont
 	t.AddStringToMethod("}\n")
 }
 
+// EnterCaseBlock is called when entering the caseBlock production.
+// It generates the Go code for a case block by writing "case" followed by the
+// list of expressions and a colon to the method builder. The indentation level
+// is then incremented to correctly indent the case block's body.
 func (t *TranspilerListener) EnterCaseBlock(ctx *parser.CaseBlockContext) {
 	t.AddStringToMethod("case ")
 	if ctx.ExpressionList() != nil {
@@ -779,6 +790,11 @@ func (t *TranspilerListener) EnterCaseBlock(ctx *parser.CaseBlockContext) {
 	indentationMethod.Increment()
 }
 
+// EnterListAccess is called when entering the listAccess production.
+// It generates the Go code for accessing a list element by writing a line of
+// code to the method builder in the form of "<varName>[".
+// The listener also checks if the listAccess is inside an argumentList, assignment
+// or varStatement and if so, it doesn't do anything.
 func (t *TranspilerListener) EnterListAccess(ctx *parser.ListAccessContext) {
 	if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
 		return
@@ -789,6 +805,9 @@ func (t *TranspilerListener) EnterListAccess(ctx *parser.ListAccessContext) {
 	t.AddStringToMethod(ctx.LeftHandSide().GetText()+"[", false)
 }
 
+// ExitListAccess is called when exiting the listAccess production.
+// It appends a closing bracket to the method builder to complete the list access expression.
+// If the listAccess is inside an argumentList, assignment, or varStatement, it does nothing.
 func (t *TranspilerListener) ExitListAccess(ctx *parser.ListAccessContext) {
 	if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
 		return
@@ -797,31 +816,106 @@ func (t *TranspilerListener) ExitListAccess(ctx *parser.ListAccessContext) {
 	t.AddStringToMethod("]", false)
 }
 
+// ExitCaseBlock is called when exiting the caseBlock production.
+// It decrements the indentation level to correctly indent any code following
+// the case block.
 func (t *TranspilerListener) ExitCaseBlock(ctx *parser.CaseBlockContext) {
 	indentationMethod.Decrement()
 }
 
+// EnterDefaultBlock is called when entering the defaultBlock production.
+// It generates the Go code for a default block within a switch statement by
+// appending "default:" followed by a newline to the method builder. The listener
+// also increments the indentation level for the method to correctly indent the
+// default block's body.
 func (t *TranspilerListener) EnterDefaultBlock(ctx *parser.DefaultBlockContext) {
 	t.AddStringToMethod("default:\n")
 	indentationMethod.Increment()
 }
 
+// ExitDefaultBlock is called when exiting the defaultBlock production.
+// It decrements the indentation level to correctly indent any code following
+// the default block.
 func (t *TranspilerListener) ExitDefaultBlock(ctx *parser.DefaultBlockContext) {
 	indentationMethod.Decrement()
 }
 
+// EnterIncrementOrDecrementStatement is called when entering the
+// incrementOrDecrementStatement production. It generates the Go code for
+// an increment or decrement statement by writing a line of code to the
+// method builder in the form of "<varName>++" or "<varName>--". The
+// listener also checks if the increment or decrement statement is inside
+// an assignment and if so, it does nothing.
 func (t *TranspilerListener) EnterIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
-	if IsInside(ctx, "*parser.AssignmentContext") {
+	if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
 		return
 	}
 
 	t.AddStringToMethod(ctx.GetText() + "\n")
 }
 
+// ExitIncrementOrDecrementStatement is called when exiting the
+// incrementOrDecrementStatement production.
+//
+// If the increment or decrement statement is inside an assignment, it does nothing.
+// Otherwise, it does nothing as well, since the EnterIncrementOrDecrementStatement
+// method already generated the necessary code for the increment or decrement statement.
 func (t *TranspilerListener) ExitIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
-	if IsInside(ctx, "*parser.AssignmentContext") {
+	if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
 		return
 	}
+}
+
+// EnterAnonimousFunctionDeclaration is called when entering the anonimousFunctionDeclaration production.
+// It generates the Go code for an anonymous function declaration by writing a line of code to the
+// method builder in the form of "func (<params>) <returnType> {". The listener is also responsible
+// for indenting the body of the anonymous function.
+func (t *TranspilerListener) EnterAnonimousFunctionDeclaration(ctx *parser.AnonimousFunctionDeclarationContext) {
+	var params []string
+
+	t.AddStringToMethod("func (", false)
+
+	if ctx.ParameterList() != nil {
+		for _, paramCtx := range ctx.ParameterList().AllParameter() {
+			paramName := paramCtx.IDENTIFIER().GetText()
+			paramType := paramCtx.VarType().GetText()
+
+			if paramCtx.ELLIPSIS() != nil {
+				paramType = "..." + paramType
+			}
+
+			params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+		}
+	}
+
+	t.AddStringToMethod(strings.Join(params, ", "), false)
+	t.AddStringToMethod(") ", false)
+
+	if ctx.ReturnType() != nil {
+
+		if ctx.ReturnType().ReturnTypeList() != nil {
+			returnTypes := []string{}
+			for _, paramCtx := range ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() {
+				returnType := paramCtx.VarType().GetText()
+				returnTypes = append(returnTypes, returnType)
+			}
+			t.AddStringToMethod(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")), false)
+		} else if singleReturn := ctx.ReturnType().VarType(); singleReturn != nil {
+			returnType := singleReturn.GetText()
+			t.AddStringToMethod(fmt.Sprintf("%s ", returnType), false)
+		}
+	}
+
+	t.AddStringToMethod("{\n", false)
+	indentationMethod.Increment()
+}
+
+// ExitAnonimousFunctionDeclaration is called when exiting the anonimousFunctionDeclaration production.
+// It finalizes the anonymous function declaration by writing a closing brace to the method builder
+// and decrementing the indentation level.
+func (t *TranspilerListener) ExitAnonimousFunctionDeclaration(ctx *parser.AnonimousFunctionDeclarationContext) {
+	indentationMethod.Decrement()
+	t.AddStringToMethod("}\n")
 }
 
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
@@ -845,6 +939,13 @@ type GetTextInterface interface {
 	GetText() string
 }
 
+// DebugContext is a helper function for debugging ANTLR context objects.
+//
+// It prints the type of the context, the text it represents, and the methods
+// available on the context.
+//
+// It is intended for internal use only during development and should not be
+// used in production code.
 func DebugContext(ctx interface{}) {
 	fmt.Println("-----------------\n")
 	fmt.Printf("%T\n\n\n", ctx)
@@ -868,6 +969,13 @@ func DebugContext(ctx interface{}) {
 
 }
 
+// IsInside checks if the given context is inside any of the external contexts.
+//
+// It recursively checks the parent of the given context until it finds a context
+// that matches one of the external context types.
+//
+// If the context matches one of the external context types, it returns true.
+// Otherwise, it returns false.
 func IsInside(ctx any, external ...string) bool {
 	for ctx != nil {
 		ctxType := reflect.TypeOf(ctx).String()
@@ -894,10 +1002,62 @@ func IsInside(ctx any, external ...string) bool {
 	return false
 }
 
+// InsideCompare compares the level of two external contexts inside the given context.
+//
+// It takes a context and two external context types as arguments and returns two
+// integers, each representing the level of the corresponding external context.
+// The level is the number of parent contexts that need to be traversed to reach the
+// external context.
+//
+// The function is used to compare the level of two external contexts and returns
+// the level of the external context that is deepest in the given context. If
+// one of the external contexts is not present in the given context, the function
+// returns -1 for that context.
+func InsideCompare(ctx any, external1 string, external2 string) (int, int) {
+	var levelInside = [2]int{-1, -1} // Inicializa com -1 (não encontrado)
+
+	for i, external := range []string{external1, external2} {
+		level := 0
+		currentCtx := ctx
+
+		for currentCtx != nil {
+			ctxType := reflect.TypeOf(currentCtx).String()
+
+			// fmt.Println("i: ", i, " - level: ", level, " - ctxType: ", ctxType)
+
+			if ctxType == external {
+				levelInside[i] = level
+				break
+			}
+
+			_, exists := reflect.TypeOf(currentCtx).MethodByName("GetParent")
+			if !exists {
+				break
+			}
+
+			parent := reflect.ValueOf(currentCtx).MethodByName("GetParent").Call(nil)
+			if len(parent) == 0 || parent[0].IsNil() {
+				break
+			}
+
+			currentCtx = parent[0].Interface()
+			level++
+		}
+	}
+
+	return levelInside[0], levelInside[1]
+}
+
+// GetCaller returns the name of the caller function.
+//
+// It calls runtime.Caller(2) to get the program counter (pc) of the caller,
+// and then calls runtime.FuncForPC(pc).Name() to get the name of the caller.
+//
+// If there is an error, it returns "Unknown".
 func GetCaller() string {
 	pc, _, _, ok := runtime.Caller(2)
 	if !ok {
-		return "Desconhecido"
+		return "Unknown"
 	}
 	return runtime.FuncForPC(pc).Name()
 }

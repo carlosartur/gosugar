@@ -88,6 +88,10 @@ methodDeclaration
     : ( STATIC )? 'func' IDENTIFIER '(' parameterList? ')' returnType? methodBody
     ;
 
+anonimousFunctionDeclaration
+    : '(' parameterList? ')' (':' returnType)? '->' methodBody
+    ;
+
 returnType
     : '(' returnTypeList ')'
     | varType
@@ -207,6 +211,7 @@ primaryExpression
     | negationExpression
     | '(' expression ')'
     | listAccess
+    | anonimousFunctionDeclaration
     ;
 
 mapKeyValue
