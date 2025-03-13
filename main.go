@@ -34,9 +34,9 @@ func transpiller(filePath, basePath, outputDir string) error {
 	input := antlr.NewInputStream(string(content))
 
 	// Configuração do lexer e parser
-	lexer := parser.NewGoPlusLexer(input)
+	lexer := parser.NewGoSugarLexer(input)
 	stream := antlr.NewCommonTokenStream(lexer, 0)
-	p := parser.NewGoPlusParser(stream)
+	p := parser.NewGoSugarParser(stream)
 	p.BuildParseTrees = true
 
 	// Listener para processar a árvore de análise

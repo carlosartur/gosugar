@@ -1,4 +1,4 @@
-grammar GoPlus;
+grammar GoSugar;
 
 // Regras principais
 program: programDeclaration* EOF;

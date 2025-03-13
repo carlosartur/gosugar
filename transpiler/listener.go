@@ -27,9 +27,9 @@ var indentationMethod Indentation = 0
 
 // TranspilerListener implements the custom listener
 type TranspilerListener struct {
-	*parser.BaseGoPlusListener                 // Inherits from the generated base listener
-	structBuilder              strings.Builder // For struct composition and attributes
-	methodBuilder              strings.Builder // For method declarations and bodies
+	*parser.BaseGoSugarListener                 // Inherits from the generated base listener
+	structBuilder               strings.Builder // For struct composition and attributes
+	methodBuilder               strings.Builder // For method declarations and bodies
 }
 
 func (t *TranspilerListener) AddStringToStruct(str string, indent ...bool) {
