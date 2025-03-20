@@ -371,7 +371,7 @@ func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	} else if ctx.LeftHandSide() != nil {
 		methodName = ctx.LeftHandSide().GetText()
 	} else {
-		panic("methodCall: neither IDENTIFIER nor leftHandSide is present")
+		fmt.Println("methodCall: neither IDENTIFIER nor leftHandSide is present\n\n")
 	}
 
 	args := []string{}
