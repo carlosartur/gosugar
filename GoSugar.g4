@@ -203,7 +203,7 @@ primaryExpression
     | sliceDeclaration
     | sliceOrArrayLiteral
     | methodCall
-    | IDENTIFIER
+    | STAR? IDENTIFIER
     | STRING
     | NUMBER
     | leftHandSide
@@ -212,6 +212,8 @@ primaryExpression
     | '(' expression ')'
     | listAccess
     | anonimousFunctionDeclaration
+    | incrementOrDecrementStatement
+    | typeConversion
     ;
 
 mapKeyValue
@@ -294,6 +296,10 @@ expressionList
 
 foreachStatement
     : 'foreach' expression 'as' IDENTIFIER (',' IDENTIFIER)? block
+    ;
+
+typeConversion
+    : IDENTIFIER '(' expression ')'
     ;
 
 // Tokens
