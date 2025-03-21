@@ -151,11 +151,9 @@ func copyFile(src, dst string) error {
 }
 
 func main() {
-	// Definir a flag de entrada
 	path := flag.String("path", "", "Path to the directory containing .gosu files")
 	flag.Parse()
 
-	// Validar o caminho
 	if *path == "" {
 		fmt.Println("Please provide a path to the directory with parameter --path")
 		return
@@ -166,7 +164,6 @@ func main() {
 		return
 	}
 
-	// Processar os arquivos no diretório
 	err := processDirectory(*path)
 	if err != nil {
 		fmt.Printf("Error processing directory: %v\n", err)

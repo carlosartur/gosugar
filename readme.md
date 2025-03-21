@@ -1,27 +1,3 @@
-<style>
-  /* Monokai Theme for Markdown Code Blocks */
-  pre {
-    background-color: #272822; /* Fundo escuro */
-    color: #F8F8F2; /* Cor padrão do texto */
-    padding: 10px;
-    border-radius: 5px;
-    overflow-x: auto;
-  }
-
-  .keyword { color: #F92672; font-weight: bold; } /* Palavras-chave (ex: package, class, use, must) */
-  .string { color: #E6DB74; } /* Strings */
-  .comment { color: #75715E; font-style: italic; } /* Comentários */
-  .type { color: #66D9EF; font-weight: bold; } /* Tipos de retorno e tipos de dados */
-  .number { color: #AE81FF; } /* Números */
-  .func-keyword { color: #66D9EF; font-weight: bold; } /* 'func' em azul */
-  .function { color: #A6E22E; font-weight: bold; } /* Nomes de funções em verde */
-  .operator { color: #F92672; } /* Operadores como =, +, : */
-  .variable { color: #F8F8F2; } /* Variáveis e propriedades (brancas) */
-  .class { color: #A6E22E; font-weight: bold; } /* Nome de classes */
-  .this { color: #FD971F; font-weight: bold; } /* 'this' agora está laranja */
-
-</style>
-
 # GoSugar – A Little Sugar for Go
 
 GoSugar is a **dialect of Go** designed to enhance Go’s simplicity with powerful **object-oriented** features while maintaining full compatibility. It **transpiles to standard Go**, ensuring you can leverage GoSugar’s syntax improvements without sacrificing performance.
