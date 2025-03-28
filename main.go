@@ -59,6 +59,8 @@ func transpiller(filePath, basePath, outputDir string) error {
 	// Criar caminho do arquivo de saída
 	outputFilePath := filepath.Join(outputPath, filepath.Base(filePath[:len(filePath)-len(filepath.Ext(filePath))]+".go"))
 
+	fmt.Printf("code structure: %s\n", listener.ProcessedRulesList.ToString())
+
 	// Escrever o arquivo
 	err = os.WriteFile(outputFilePath, []byte(listener.GoCode()), 0644)
 	if err != nil {
@@ -101,7 +103,7 @@ func processDirectory(path string) error {
 
 		if !d.IsDir() {
 			if filepath.Ext(filePath) == ".gosu" {
-				fmt.Println("Transpiling:", filePath)
+				fmt.Println("\nTranspiling:", filePath)
 				err = transpiller(filePath, path, outputDir)
 				if err != nil {
 					return err

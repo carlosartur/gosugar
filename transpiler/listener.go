@@ -30,6 +30,7 @@ type TranspilerListener struct {
 	*parser.BaseGoSugarListener                 // Inherits from the generated base listener
 	structBuilder               strings.Builder // For struct composition and attributes
 	methodBuilder               strings.Builder // For method declarations and bodies
+	ProcessedRulesList          ProcessedRules  // For rule processing
 }
 
 func (t *TranspilerListener) AddStringToStruct(str string, indent ...bool) {
@@ -50,7 +51,7 @@ func (t *TranspilerListener) AddStringToStruct(str string, indent ...bool) {
 }
 
 func (t *TranspilerListener) AddStringToMethod(str string, indent ...bool) {
-	fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
+	// fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
 
 	indentValue := true
 	if len(indent) > 0 {
@@ -120,9 +121,18 @@ func (t *TranspilerListener) EnterClassDeclaration(ctx *parser.ClassDeclarationC
 			))
 		}
 
-		for _, compCtx := range ctx.CompositionList().AllIDENTIFIER() {
+		for _, compCtx := range ctx.CompositionList().AllLeftHandSide() {
 			compName := compCtx.GetText()
+
+			fmt.Println(compName)
+
 			t.AddStringToStruct(fmt.Sprintf("%s\n", compName))
+
+			if ClassInfoMap[compName] == nil {
+				ClassInfoMap[compName] = &ClassInfo{
+					Name: compName,
+				}
+			}
 
 			CurrentClass.AddUse(*ClassInfoMap[compName])
 		}
@@ -234,8 +244,11 @@ func (t *TranspilerListener) EnterMethodDeclaration(ctx *parser.MethodDeclaratio
 	if ctx.ParameterList() != nil {
 		for _, paramCtx := range ctx.ParameterList().AllParameter() {
 			paramName := paramCtx.IDENTIFIER().GetText()
-			paramType := paramCtx.VarType().GetText()
+			if paramCtx.VarType() == nil {
+				panic(fmt.Sprintf(`param must have a type, got "%s" on line %d`, paramCtx.GetText(), paramCtx.GetStart().GetLine()))
+			}
 
+			paramType := paramCtx.VarType().GetText()
 			if paramCtx.ELLIPSIS() != nil {
 				paramType = "..." + paramType
 			}
@@ -298,6 +311,7 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 	// Process the left-hand side (lhs) of the assignment
 	var lhs string
 	var expr string
+	var lhsPieces []string
 	operation := "="
 
 	if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
@@ -307,15 +321,11 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 		}
 	}
 
-	switch true {
-	case ctx.LeftHandSide() != nil:
-		lhs = ctx.LeftHandSide().GetText()
-	case ctx.ListAccess() != nil:
-		lhs = ctx.ListAccess().GetText()
-	default:
-		fmt.Println("No left-hand side found in the assignment.")
-		return
+	for _, alhs := range ctx.AllAssignmentLeftHandSide() {
+		lhsPieces = append(lhsPieces, alhs.GetText())
 	}
+
+	lhs = strings.Join(lhsPieces, ", ")
 
 	if ctx.AssignmentOperator() != nil {
 		operation = ctx.AssignmentOperator().GetText()
@@ -324,7 +334,7 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 	showOnlyLhsAndOperation := ctx.Expression().PrimaryExpression().CreateObjectDeclaration() != nil ||
 		ctx.Expression().PrimaryExpression().AnonimousFunctionDeclaration() != nil
 
-	fmt.Printf("lhs: %s, operation: %s, expr: %s, showOnlyLhsAndOperation: %v\n", lhs, operation, expr, showOnlyLhsAndOperation)
+	// fmt.Printf("lhs: %s, operation: %s, expr: %s, showOnlyLhsAndOperation: %v\n", lhs, operation, expr, showOnlyLhsAndOperation)
 
 	if showOnlyLhsAndOperation {
 		t.AddStringToMethod(fmt.Sprintf("%s %s ", lhs, operation))
@@ -362,7 +372,34 @@ func (t *TranspilerListener) EnterReturnOperation(ctx *parser.ReturnOperationCon
 func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	var methodName string
 
-	if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+	if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext", "*parser.VarStatementContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+		return
+	}
+
+	if IsInside(ctx, "*parser.IfStatementContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") && !IsInside(ctx, "*parser.BlockContext") {
+		return
+	}
+
+	if IsInside(ctx.GetParent(), "*parser.MethodCallContext") {
+		return
+	}
+
+	isDuplicated := t.ProcessedRulesList.IsDuplicate(
+		ctx,
+		"*parser.AssignmentContext",
+		"*parser.ReturnOperationContext",
+		"*parser.VarStatementContext",
+		"*parser.AnonimousFunctionDeclarationContext",
+		"*parser.IfStatementContext",
+		"*parser.ArgumentListContext",
+		"*parser.ClassicForLoopContext",
+		"*parser.RangeForLoopContext",
+		"*parser.ConditionForLoopContext",
+		"*parser.ForeachStatementContext",
+		"*parser.SwitchStatementContext",
+	)
+
+	if isDuplicated {
 		return
 	}
 
@@ -373,6 +410,8 @@ func (t *TranspilerListener) EnterMethodCall(ctx *parser.MethodCallContext) {
 	} else {
 		fmt.Println("methodCall: neither IDENTIFIER nor leftHandSide is present\n\n")
 	}
+
+	// t.AddStringToMethod(fmt.Sprintf("/** Calling method [%s] **/", methodName))
 
 	args := []string{}
 	if ctx.ArgumentList() != nil {
@@ -570,10 +609,10 @@ func (t *TranspilerListener) EnterIfStatement(ctx *parser.IfStatementContext) {
 		t.AddStringToMethod(ctx.Assignment().GetText()+";", false)
 	}
 
-	if ctx.Expression() != nil {
-		t.AddStringToMethod(ctx.Expression().GetText(), false)
+	if ctx.Comparison() != nil {
+		t.AddStringToMethod(ctx.Comparison().GetText(), false)
 	} else {
-		panic(fmt.Sprintf(`if must have expression`))
+		panic(fmt.Sprintf(`if must have an condition, got "%s"`, ctx.GetText()))
 	}
 
 	t.AddStringToMethod(" {\n", false)
@@ -622,6 +661,10 @@ func (t *TranspilerListener) ExitElseStatement(ctx *parser.ElseStatementContext)
 
 	if ctx.IfStatement() == nil {
 		t.AddStringToMethod("}\n")
+	}
+
+	if ctx.IfStatement() == nil {
+		indentationMethod.Increment()
 	}
 }
 
@@ -910,6 +953,29 @@ func (t *TranspilerListener) EnterAnonimousFunctionDeclaration(ctx *parser.Anoni
 	indentationMethod.Increment()
 }
 
+func (t *TranspilerListener) EnterInterfaceTypeVerification(ctx *parser.InterfaceTypeVerificationContext) {
+	isDuplicated := t.ProcessedRulesList.IsDuplicate(
+		ctx,
+		"*parser.AssignmentContext",
+		"*parser.ReturnOperationContext",
+		"*parser.VarStatementContext",
+		"*parser.AnonimousFunctionDeclarationContext",
+		"*parser.IfStatementContext",
+		"*parser.ArgumentListContext",
+		"*parser.ClassicForLoopContext",
+		"*parser.RangeForLoopContext",
+		"*parser.ConditionForLoopContext",
+		"*parser.ForeachStatementContext",
+		"*parser.SwitchStatementContext",
+		"*parser.MethodCallContext",
+	)
+
+	if isDuplicated {
+		return
+	}
+	t.AddStringToMethod(ctx.GetText(), false)
+}
+
 // ExitAnonimousFunctionDeclaration is called when exiting the anonimousFunctionDeclaration production.
 // It finalizes the anonymous function declaration by writing a closing brace to the method builder
 // and decrementing the indentation level.
@@ -921,6 +987,7 @@ func (t *TranspilerListener) ExitAnonimousFunctionDeclaration(ctx *parser.Anonim
 func (t *TranspilerListener) EnterEveryRule(ctx antlr.ParserRuleContext) {
 	// Can be used for logic before entering any rule
 	// DebugContext(ctx)
+	t.ProcessedRulesList.AddRule(ctx)
 }
 
 func (t *TranspilerListener) ExitEveryRule(ctx antlr.ParserRuleContext) {

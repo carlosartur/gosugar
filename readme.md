@@ -14,9 +14,9 @@ GoSugar enhances Go by introducing:
 
 1. Classes (`class` keyword)
 2. Mandatory Interfaces (`must` keyword)
-3. Methods 
+3. Methods
 4. Constructors (explicit and automatic)
-5. `create` keyword (like new in other languages)
+5. `create` keyword (like `new` in other languages)
 6. `foreach` loop (simpler iteration over collections)
 7. Static Methods
 8. Automatic Constructors (reducing boilerplate)
@@ -25,9 +25,19 @@ GoSugar enhances Go by introducing:
 11. Simulated Inheritance via Composition (`use` keyword)
 12. Modern Lambda/Anonymous Function Syntax
 
-## Code examples
+## Why Use `Constructor` as a Method?
 
-1. Classes, properties/attributes and methods, this especial var use (features 1, 3 and 9 above)
+In GoSugar, constructors are implemented as methods rather than special functions. This approach has several advantages:
+
+1. **Avoids Occupying a Name**: The name `NewClass` remains available for users to define their own factory functions without conflicts.
+2. **Prevents Arbitrary Renaming**: The transpiler does not need to rename `Constructor` to `NewClass`, ensuring clarity in the code.
+3. **Consistent Naming**: All constructors use `Constructor`, avoiding name duplication issues within the same package.
+4. **Explicitness**: Unlike implicit constructors in some languages, GoSugar keeps object creation explicit, adhering to Go's philosophy of clarity.
+
+## Code Examples
+
+### 1. Classes, Properties, and Methods (`this` keyword)
+
 ```go
 class Person {
     // Attribute
@@ -40,15 +50,15 @@ class Person {
 }
 ```
 
-2. Mandatory Interfaces (feature 2 above)
+### 2. Mandatory Interfaces (`must` keyword)
 
 ```go
 interface IPerson {
     GetName() string
 }
 
-// If class Person don't implement method GetName returning a string,
-// the transpiller will throw a error, asking to implement it
+// If class Person doesn't implement method GetName returning a string,
+// the transpiler will throw an error, requiring it to be implemented
 class Person must IPerson {
     // Attribute
     Name string
@@ -60,68 +70,59 @@ class Person must IPerson {
 }
 ```
 
-3. Constructors, create keyword (features 4, 8 and 5 above)
+### 3. Constructors and the `create` Keyword
 
 ```go
 class Person {
     // Attribute
     Name string
 
-    // Constructor method. 
-    // Creates 'this' object, execute the code inside the function,
-    // and returns created object
+    // Constructor method.
+    // This initializes the object and returns it.
     func Constructor(name string) {
         this.Name = name
-    }
-
-    // Method
-    func GetName() string {
-        return this.Name
     }
 }
 
 // Main function
 func main() {
-    // 'create' will call 'Constructor' function.
-    // If class doesn't have a 'Constructor' method, the transpiller will create a empty constructor
+    // 'create' calls the 'Constructor' method.
+    // If the class has no 'Constructor' method, an empty constructor is generated.
     person := create Person("John")
     fmt.Println(person.GetName())
 }
 ```
 
-4. Foreach
+### 4. Foreach Loop
 
 ```go
 func main() {
     nums := []int{10, 20, 30, 40}
 
-    // 'foreach' is an shortcut for for-range loop.
+    // 'foreach' simplifies Go's for-range loop.
     foreach nums as index, num {
-        fmt.Printf("Foreach with index and value \nIndex: %d, Value: %d\n", index, num)
+        fmt.Printf("Index: %d, Value: %d\n", index, num)
     }
 
-    // key or index is optional.
+    // Key or index is optional.
     foreach nums as num {
-        fmt.Printf("Foreach with value only \nValue: %d\n", num)
+        fmt.Printf("Value: %d\n", num)
     }
 }
 ```
 
-5. Static methods
+### 5. Static Methods
 
 ```go
 class Person {
-    // Attribute
     Name string
 
-    // Constructor method. 
-    // Creates 'this' object, execute the code inside the function,
-    // and returns created object
+    // Constructor method
     func Constructor(name string) {
         this.Name = name
     }
 
-    // Method
+    // Static method
     static func SayHello(p Person) string {
         say := fmt.Sprintf("Hello, %s!", p.Name)
         fmt.Println(say)
@@ -133,17 +134,14 @@ class Person {
 func main() {
     person := create Person("John")
 
-    // A static function creates a type function, not a object function,
-    // so, you must call with ClassName{}.StaticFuncName()
+    // Static functions belong to the class, not instances.
     Person{}.SayHello(person)
 }
 ```
 
-6. Extending Built-in Types (feature 10 above)
+### 6. Extending Built-in Types
 
 ```go
-// Here, you can expand types that current exists
-// 'Must interface' is still supported here, but composition is not supported because Go do not support it.
 class MyInt as int32 {
     // Methods
     func Increment() {
@@ -162,56 +160,36 @@ func main() {
     var i MyInt
 
     i = 0
-
-    // Prints 0
     fmt.Println(i)
 
-    // Increment i value to 1
     i.Increment()
-
-    // Prints 1
     fmt.Println(i)
 
-    // Decrement i value back to 0
     i.Decrement()
-
-    // Prints 0, again
     fmt.Println(i)
 }
 ```
 
-7. Simulated Inheritance via Composition (feature 11 above)
+### 7. Simulated Inheritance via Composition
 
 ```go
 class Person {
-    // Attribute
     Name string
 
-    // Method
     func GetName() string {
         return this.Name
     }
 }
 
-// Here, composition happens.
-// It works like traits from PHP and Rust, mixins from Ruby and Python,
-// protocol extensions from Swift, default interface methods from C#,
-// and interfaces with implementation from Kotlin.
-//  
-// IMPORTANT: Go does not support implicit upcasting of embedded types.  
-// Unlike inheritance in object-oriented languages, embedding does not  
-// make the outer struct a subtype of the embedded struct.  
-// You must explicitly access the embedded field when passing it to functions.
+// Composition works like traits in PHP, mixins in Ruby, and protocol extensions in Swift.
 class Employee use Person {
     Salary float64
 
-    // Constructor method. 
     func Constructor(name string, salary float64) {
         this.Name = name
         this.Salary = salary
     }
 
-    // Method
     func GetSalary() float64 {
         return this.Salary
     }
@@ -219,23 +197,17 @@ class Employee use Person {
 
 // Main function
 func main() {
-
     e := create Employee("John", 1234.56)
-
-    // Prints name of Employee
     fmt.Println(e.GetName())
-
-    // Prints salary of Employee
     fmt.Println(e.GetSalary())
 }
 ```
 
-8. Lambda/Anonimous functions
+### 8. Lambda/Anonymous Functions
 
 ```go
 // Main function
 func main() {
-
     // Function with parameter and return type
     exampleFn := (i int): int -> {
         fmt.Println(i)
@@ -260,14 +232,11 @@ func main() {
 }
 ```
 
-### Complete example code
+## Complete Example
 
 ```go
 package main
-
-import (
-    "fmt"
-)
+import "fmt"
 
 // Interfaces
 interface IPrintable {
@@ -287,67 +256,31 @@ class Printable {
     }
 }
 
-// Employee class extending Person and Printable, implementing IPrintable
+// Employee class using composition and implementing an interface
 class Employee use Person, Printable must IPrintable {
     Salary float64
 
-    // Constructor
     func Constructor(name string, age int, id int64, salary float64) {
         this.Name = name
         this.Age = age
         this.Id = id
         this.Salary = salary
     }
-
-    func GetSalary() float64 {
-        return this.Salary
-    }
-
-    func SetSalary(salary float64) *Employee {
-        this.Salary = salary
-        return this
-    }
-
-    func SumSalary(rise float64) (*Employee, float64) {
-        this.Salary += rise
-        return this, this.Salary
-    }
-
-    // Implementing Print method
-    func Print() {
-        fmt.Printf("Name: %s\n", this.Name)
-        fmt.Printf("Age: %d\n", this.Age)
-        fmt.Printf("ID: %d\n", this.Id)
-        fmt.Printf("Salary: %.2f\n", this.Salary)
-    }
-
-    static func TestEmployee(e Employee) {
-        fmt.Printf("Name: %s\n", e.Name)
-        fmt.Printf("Age: %d\n", e.Age)
-        fmt.Printf("ID: %d\n", e.Id)
-        fmt.Printf("Salary: %.2f\n", e.Salary)
-    }
 }
 
-// Another class implementing IPrintable
-class Client must IPrintable {
-    func Print() {
-        fmt.Printf("Client")
-    }
-}
-
-// Main function to test syntax
+// Main function
 func main() {
     employee := create Employee("Carlos", 36, 1234, 10000.00)
     employee.Print()
-    Employee{}.TestEmployee(employee)
 }
 ```
 
 ## Why Choose GoSugar?
-- Keep Go’s performance while improving its syntax
+
+- Maintain Go’s performance while improving its syntax
 - Write cleaner, more expressive code
-- Maintain Go compatibility – everything compiles to standard Go
+- Fully compatible with Go – compiles to standard Go
 - Reduce boilerplate, making development faster
 
 Learn more: (repository link here)
+

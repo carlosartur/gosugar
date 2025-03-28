@@ -5,10 +5,15 @@ program: programDeclaration* EOF;
 
 programDeclaration
     : importsDeclaration
+    | globalVarStatement
     | interfaceDeclaration
     | classDeclaration
     | packageDeclaration
     | methodDeclaration
+    ;
+
+globalVarStatement
+    : varStatement
     ;
 
 interfaceDeclaration
@@ -53,11 +58,11 @@ listAccess
     ;
 
 aliasType
-    : IDENTIFIER
+    : varType
     ;
 
 compositionList
-    : IDENTIFIER ( ',' IDENTIFIER )*
+    : leftHandSide ( ',' leftHandSide )*
     ;
 
 mustInterfaceList
@@ -74,10 +79,11 @@ classMember
     ;
 
 varType
-    : STAR? IDENTIFIER
-    | STAR? '[]' varType
-    | STAR? '[' NUMBER? ']' varType
-    | STAR? 'map' '[' varType ']' varType
+    : STAR? AMPERSAND? IDENTIFIER
+    | STAR? AMPERSAND? '[]' varType
+    | STAR? AMPERSAND? '[' NUMBER? ']' varType
+    | STAR? AMPERSAND? 'map' '[' varType ']' varType
+    | STAR? AMPERSAND? IDENTIFIER DOT varType
     ;
 
 fieldDeclaration
@@ -123,18 +129,19 @@ block
     ;
 
 statement
-    : assignment
-    | methodCall
-    | returnOperation
-    | continueOperation
-    | breakOperation
-    | varStatement
-    | ifStatement
-    | elseStatement
-    | forStatement
-    | foreachStatement
-    | incrementOrDecrementStatement
-    | switchStatement
+    : assignment // 1
+    | methodCall // 2
+    | returnOperation // 3
+    | continueOperation // 4
+    | breakOperation // 5
+    | varStatement // 6
+    | listLiteral // 7
+    | ifStatement // 8
+    | elseStatement // 9
+    | forStatement // 10
+    | foreachStatement // 11
+    | incrementOrDecrementStatement // 12
+    | switchStatement // 13
     ;
 
 switchStatement
@@ -150,15 +157,21 @@ defaultBlock
     ;
 
 negationExpression
-    : '!' STAR? expression
+    : '!' STAR? AMPERSAND? expression
     ;
 
 assignment
-    : (leftHandSide | listAccess) assignmentOperator expression
+    : assignmentLeftHandSide (',' assignmentLeftHandSide)? assignmentOperator expression
+    ;
+
+assignmentLeftHandSide
+    : leftHandSide (',' leftHandSide)
+    | listAccess
     ;
 
 leftHandSide
-    : IDENTIFIER ('{}')* (DOT IDENTIFIER)*
+    : STAR? AMPERSAND? IDENTIFIER ('{}')* (DOT IDENTIFIER)*
+    | STAR? AMPERSAND? IDENTIFIER ('[' expression ']')* ( DOT IDENTIFIER ('[' expression ']')*)*
     ;
 
 assignmentOperator
@@ -183,11 +196,13 @@ comparisonOperator
     | '<'
     | '>='
     | '<='
+    | '||'
+    | '&&'
     ;
 
 methodCall
-    : IDENTIFIER '(' argumentList? ')'
-    | leftHandSide '(' argumentList? ')'
+    : IDENTIFIER '(' argumentList? ')' (DOT methodCall)?
+    | leftHandSide '(' argumentList? ')' ','? (DOT methodCall)?
     ;
 
 argumentList
@@ -198,31 +213,56 @@ expression
     : primaryExpression (operatorExpression)*
     ;
 
+
+
+concatenatedString
+    : STRING ('+' STRING)+
+    ;
+
+interfaceTypeVerification
+    : STAR? IDENTIFIER DOT '(' STAR? IDENTIFIER (DOT IDENTIFIER)? ')'
+    | methodCall DOT '(' STAR? IDENTIFIER (DOT IDENTIFIER)? ')'
+    | 'interface{}' '(' IDENTIFIER (DOT IDENTIFIER | methodCall)? ')' (DOT '(' IDENTIFIER ')')?
+    | STAR? IDENTIFIER DOT (IDENTIFIER DOT)? ('(' IDENTIFIER (DOT IDENTIFIER | methodCall)? ')')? (DOT methodCall)?
+    ;
+
 primaryExpression
-    : createObjectDeclaration
-    | sliceDeclaration
-    | sliceOrArrayLiteral
-    | methodCall
-    | STAR? IDENTIFIER
-    | STRING
-    | NUMBER
-    | leftHandSide
-    | listLiteral
-    | negationExpression
-    | '(' expression ')'
-    | listAccess
-    | anonimousFunctionDeclaration
-    | incrementOrDecrementStatement
-    | typeConversion
+    : createObjectDeclaration // 1
+    | sliceDeclaration // 2
+    | sliceOrArrayLiteral // 3
+    | methodCall (DOT methodCall)? // 4
+    | STAR? IDENTIFIER // 5
+    | AMPERSAND? IDENTIFIER // 6
+    | concatenatedString // 7
+    | NIL // 8
+    | STRING // 9
+    | NUMBER // 10
+    | leftHandSide // 11
+    | listLiteral // 12
+    | negationExpression // 13
+    | '(' expression ')' // 14
+    | listAccess // 15
+    | anonimousFunctionDeclaration // 16
+    | incrementOrDecrementStatement // 17
+    | typeConversion // 18
+    | varType // 19
+    | interfaceTypeVerification // 20
+    | directCreateInstance // 21
+    ;
+
+directCreateInstance
+    : AMPERSAND? varType '{' (mapKeyValue (',' mapKeyValue)* ','?)? '}'
     ;
 
 mapKeyValue
-    : expression ':' expression
+    : (STRING | IDENTIFIER) ':' expression
     ;
 
 listLiteral
-    : '{' expression (',' expression)* '}'
-    | '{' mapKeyValue (',' mapKeyValue)* '}'
+    : '{' (mapKeyValue (',' mapKeyValue)* ','?)? '}'
+    | '{' (expression (',' expression)* ','?)? '}'
+    | varType '{' (expression (',' expression)* ','?)? '}'
+    | varType '{}'
     ;
 
 operatorExpression
@@ -232,7 +272,7 @@ operatorExpression
     ;
 
 comparison
-    : primaryExpression comparisonOperator primaryExpression
+    : primaryExpression (comparisonOperator comparison)?
     ;
 
 returnOperation
@@ -250,10 +290,11 @@ breakOperation
 varStatement
     : 'var' IDENTIFIER varType ('=' expression)?
     | 'var' IDENTIFIER ':=' expression
+    | 'var' IDENTIFIER '=' expression
     ;
 
 ifStatement
-    : 'if' (assignment ';')? expression block elseStatement?
+    : 'if' (assignment ';')? comparison block elseStatement?
     ;
 
 elseStatement
@@ -261,7 +302,7 @@ elseStatement
     ;
 
 incrementOrDecrementStatement
-    : STAR? IDENTIFIER ('++' | '--')
+    : STAR? AMPERSAND? IDENTIFIER ('++' | '--')
     ;
 
 forStatement
@@ -305,18 +346,21 @@ typeConversion
 // Tokens
 ELLIPSIS: '...';
 STAR: '*';
+AMPERSAND: '&';
 CREATE: 'create';
 STATIC: 'static';
-IDENTIFIER: [a-zA-Z_][a-zA-Z_0-9]*;
-NUMBER: [0-9]+ ('.' [0-9]+)?;
+IDENTIFIER: '_' | [a-zA-Z][a-zA-Z_0-9]*;
+NUMBER: '-'? [0-9]+ ('.' [0-9]+)?;
 DOT: '.';
 STRING: ('"' (ESC | ~('\\' | '"'))* '"') 
       | ('\'' (ESC | ~('\\' | '\''))* '\'') 
       | ('`' ~'`'* '`');
+NIL: 'nil';
 
 fragment ESC: '\\' (["\\/bfnrt']|UNICODE);
 fragment UNICODE: 'u' HEX HEX HEX HEX;
 fragment HEX: [0-9a-fA-F];
+
 
 // Ignorar espaços em branco
 WS: [ \t\r\n]+ -> skip;
@@ -330,4 +374,4 @@ LineComment
     ;
 
 // Final de instrução (implícito)
-NEWLINE: ';';
+NEWLINE: ';' | '\r'? '\n';
