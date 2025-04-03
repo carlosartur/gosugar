@@ -627,6 +627,10 @@ func (t *TranspilerListener) EnterIfStatement(ctx *parser.IfStatementContext) {
 func (t *TranspilerListener) ExitIfStatement(ctx *parser.IfStatementContext) {
 	indentationMethod.Decrement()
 
+	if indentationMethod == 0 {
+		indentationMethod = 1
+	}
+
 	if ctx.ElseStatement() == nil {
 		t.AddStringToMethod("}\n")
 	}
@@ -665,6 +669,10 @@ func (t *TranspilerListener) ExitElseStatement(ctx *parser.ElseStatementContext)
 
 	if ctx.IfStatement() == nil {
 		indentationMethod.Increment()
+	}
+
+	if indentationMethod == 0 {
+		indentationMethod = 1
 	}
 }
 
