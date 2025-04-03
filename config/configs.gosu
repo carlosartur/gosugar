@@ -1,0 +1,56 @@
+package config
+
+import "strings"
+
+class Configs as map[string]string {
+    static func NewConfigs(defaults map[string]string) Configs {
+        configs = make(Configs)
+        foreach defaults as key, value {
+            configs[key] = value
+        }
+        return configs
+    }
+
+    func Get(key string) string {
+        return this[key]
+    }
+
+    func Set(key string, value string) {
+        this[key] = value
+    }
+
+    func SetEnvContent(envContent string) {
+        lines := strings.Split(envContent, "\n")
+
+        foreach lines as line {
+            line = strings.TrimSpace(line)
+            if line == "" || strings.HasPrefix(line, "#") {
+                continue
+            }
+
+            parts := strings.SplitN(line, "=", 2)
+            if len(parts) != 2 {
+                continue
+            }
+
+            key := strings.TrimSpace(parts[0])
+            value := strings.TrimSpace(parts[1])
+
+            if strings.HasPrefix(value, "\"") && strings.HasSuffix(value, "\"") {
+                value = strings.Trim(value, "\"")
+            }
+
+            this.Set(key, value)
+        }
+    }
+}
+
+var CurrentConfigs Configs
+
+func init() {
+    var defaultConfigs map[string]string = {
+        "TRANSPILE_PATH": "dist",
+    }
+
+    CurrentConfigs = Configs{}.NewConfigs(defaultConfigs)
+}

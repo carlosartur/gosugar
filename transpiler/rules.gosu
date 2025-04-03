@@ -1,0 +1,68 @@
+package transpiler
+
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/antlr4-go/antlr/v4"
+)
+
+class ProcessedRule {
+	Text string
+	Line int
+	Type string
+
+	func Constructor (text string, line int, typ string) {
+		this.Text = text
+		this.Line = line
+		this.Type = typ
+	}
+}
+
+class ProcessedRules {
+	rules []ProcessedRule
+
+	func AddRule(ctx antlr.ParserRuleContext) {
+		line := ctx.GetStart().GetLine()
+		text := ctx.GetText()
+		typ := reflect.TypeOf(ctx).String()
+	
+		this.rules = append(this.rules, create ProcessedRule(text, line, typ))
+	}
+	
+	func IsDuplicate(ctx antlr.ParserRuleContext, typ ...string) bool {
+		line := ctx.GetStart().GetLine()
+		text := ctx.GetText()
+	
+		foreach this.rules as rule {
+			if rule.Line == line && strings.Contains(rule.Text, text) {
+				foreach typ as t {
+					if rule.Type == t {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	
+	func ToString() string {
+		var builder strings.Builder
+	
+		builder.WriteString("[Rules]\n")
+	
+		for _, rule := range this.rules {
+			builder.WriteString("    ")
+			builder.WriteString(fmt.Sprintf("%d", rule.Line))
+			builder.WriteString("\n        Type: ")
+			builder.WriteString(fmt.Sprintf("%s", rule.Type))
+			builder.WriteString("\n        Text: ")
+			builder.WriteString(rule.Text)
+			builder.WriteString("\n")
+		}
+	
+		return builder.String()
+	}
+	
+}

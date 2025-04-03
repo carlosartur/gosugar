@@ -1,0 +1,174 @@
+package transpiler
+
+import "fmt"
+
+class Field {
+	Name string
+	Type string
+
+	func Constructor(name string, typ string) {
+		this.Name = name
+		this.Type = typ
+	}
+}
+
+class ClassInfo {
+	Name string
+	Methods []Method
+	Uses []ClassInfo
+	Fields []Field
+	MustInterfaceList []InterfaceInfo
+	Alias string
+
+	func Constructor(name string) {
+		this.Name = name
+	}
+
+	func SetAlias(alias string) {
+		this.Alias = alias
+	}
+
+	// AddMethod adds a method to the class info.
+	//
+	// The method is represented as a Method type.
+	func AddMethod(method Method) {
+		this.Methods = append(this.Methods, method)
+	}
+
+	// AddUse adds a use to the class info.
+	//
+	// The use is represented as a ClassInfo type.
+	func AddUse(used ClassInfo) {
+		this.Uses = append(this.Uses, used)
+	}
+
+	// AddMustInterfaceList adds an interface to the class info's must interface list.
+	//
+	// The must interface list contains all the interfaces that the class must implement.
+	func AddMustInterfaceList(mustInterface InterfaceInfo) {
+		this.MustInterfaceList = append(this.MustInterfaceList, mustInterface)
+	}
+
+	// AddField adds a field to the class info.
+	//
+	// The field is represented as a Field type containing the name and type of the field.
+	func AddField(name string, typ string) {
+		field := create Field(name, typ)
+
+		this.Fields = append(this.Fields, field)
+	}
+
+	// HasConstructor returns whether the class has a constructor method named "Constructor" or not.
+	func HasConstructor() bool {
+		foreach this.Methods as method {
+			if method.Name == "Constructor" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// PrintClassInfo prints a formatted string representation of the class info to the console.
+	// It recursively prints the uses, fields, and methods of the class, as well as whether it has a
+	// constructor or not.
+	func PrintClassInfo() {
+		fmt.Printf("Class: %s\n", this.Name)
+
+		if len(this.Uses) > 0 {
+			fmt.Println("\tUses:")
+			foreach this.Uses as anUse {
+				anUse.PrintClassInfo()
+			}
+		}
+
+		if len(this.MustInterfaceList) > 0 {
+			fmt.Println("\tMust Implement:")
+			foreach this.MustInterfaceList as mustInterface {
+				fmt.Printf("\t\t%s\n", mustInterface.Name)
+			}
+		}
+
+		if len(this.Fields) > 0 {
+			fmt.Println("\tFields:")
+			foreach this.Fields as field {
+				fmt.Printf("\t\t%s %s\n", field.Name, field.Type)
+			}
+		}
+
+		if len(this.Methods) > 0 {
+			fmt.Println("\tMethods:")
+			foreach this.Methods as method {
+				fmt.Printf("\t\tMethod: %s\n", method.Name)
+
+				if len(method.Args) > 0 {
+					fmt.Println("\t\t\tArguments:")
+					foreach method.Args as arg {
+						fmt.Printf("\t\t\t\t%s %s\n", arg.Name, arg.Type)
+					}
+				}
+
+				if len(method.ReturnType) > 0 {
+					fmt.Println("\t\t\tReturn Types:")
+					foreach method.ReturnType as returnType {
+						fmt.Printf("\t\t\t\t%s\n", returnType)
+					}
+				}
+			}
+		}
+
+		if this.HasConstructor() {
+			fmt.Println("\tThis class has a constructor.")
+		} else {
+			fmt.Println("\tThis class does not have a constructor.")
+		}
+	}
+
+	// GetMethod finds and returns the method with the given name from the class info,
+	// first by iterating through the class's methods, and then by recursively searching
+	// through the methods of the classes the class uses. If no such method is found, it
+	// returns nil.
+	func GetMethod(name string) *Method {
+		foreach this.Methods as method {
+			if method.Name == name {
+				return &method
+			}
+		}
+
+		foreach this.Uses as uses {
+			method := uses.GetMethod(name)
+			if method != nil {
+				return method
+			}
+		}
+
+		return nil
+	}
+
+	func ImplementsAllInterfaces() bool {
+		doImplementsAllInterfaces := true
+
+		foreach this.MustInterfaceList as itf {
+			foreach itf.Methods as interfaceMethod {
+				classMethod := this.GetMethod(interfaceMethod.Name)
+
+				if classMethod == nil {
+					doImplementsAllInterfaces = false
+					fmt.Printf("Method '%s' from interface '%s' not implemented in '%s'\n", interfaceMethod.Name, itf.Name, this.Name)
+					continue
+				}
+
+				if !classMethod.Compare(&interfaceMethod) {
+					doImplementsAllInterfaces = false
+					fmt.Printf("Method '%s' from interface '%s' not compatible with method '%s' in '%s'\n", interfaceMethod.Name, itf.Name, interfaceMethod.Name, this.Name)
+					fmt.Printf("\tOn '%s' interface, method looks like '%s'\n", itf.Name, interfaceMethod.Signature())
+					fmt.Printf("\tOn '%s' class, method looks like '%s'\n", this.Name, classMethod.Signature())
+					continue
+				}
+
+				// fmt.Printf(classMethod.Signature() + "\n" + interfaceMethod.Signature() + "\n")
+			}
+		}
+
+		return doImplementsAllInterfaces
+	}
+}

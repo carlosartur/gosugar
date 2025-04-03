@@ -1,0 +1,1126 @@
+package transpiler
+
+import (
+	"fmt"
+	"strings"
+
+	"gopp-parser/parser" // Replace with the path to the generated parser
+
+	"reflect"
+	"runtime"
+
+	"github.com/antlr4-go/antlr/v4"
+)
+
+// ClassInfoMap maps class names to their associated ClassInfo instances
+var ClassInfoMap = make(map[string]*ClassInfo)
+
+var CurrentClass *ClassInfo
+
+var InterfaceInfoMap = make(map[string]*InterfaceInfo)
+
+var CurrentInterface *InterfaceInfo
+
+var indentationStruct Indentation = 0
+
+var indentationMethod Indentation = 0
+
+// TranspilerListener implements the custom listener
+class TranspilerListener use *parser.BaseGoSugarListener {
+	structBuilder               strings.Builder // For struct composition and attributes
+	methodBuilder               strings.Builder // For method declarations and bodies
+	ProcessedRulesList          ProcessedRules
+
+
+	func AddStringToStruct(str string, indent ...bool) {
+		// fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
+
+		indentValue := true
+		if len(indent) > 0 {
+			indentValue = indent[0]
+		}
+
+		if indentValue {
+			this.structBuilder.WriteString(indentationStruct.String() + str)
+
+			return
+		}
+
+		this.structBuilder.WriteString(str)
+	}
+
+	func AddStringToMethod(str string, indent ...bool) {
+		// fmt.Println(str, "\n", GetCaller(), "\n", "-----------------\n")
+
+		indentValue := true
+		if len(indent) > 0 {
+			indentValue = indent[0]
+		}
+
+		if indentValue {
+			this.methodBuilder.WriteString(indentationMethod.String() + str)
+			return
+		}
+
+		this.methodBuilder.WriteString(str)
+	}
+
+	// GoCode combines the generated Go code for the struct and methods
+	// by concatenating the strings from the structBuilder and methodBuilder.
+	// It returns the complete Go code representation as a single string.
+	func GoCode() string {
+		// Combines struct and methods sequentially
+		return this.structBuilder.String() + "\n" + this.structBuilder.String()
+	}
+
+	// EnterClassDeclaration is called when entering the classDeclaration production.
+	// It starts a new struct declaration with the class name and adds any composition
+	// types as fields.
+	func EnterClassDeclaration(ctx *parser.ClassDeclarationContext) {
+		className := ctx.IDENTIFIER().GetText()
+		aliasType := ctx.AliasType()
+
+		if aliasType != nil {
+			this.AddStringToStruct(fmt.Sprintf("type %s %s\n", className, aliasType.GetText()))
+
+			CurrentClass = create ClassInfo(className)
+			CurrentClass.SetAlias(aliasType.GetText())
+		} else {
+			this.AddStringToStruct(fmt.Sprintf("type %s struct {\n", className))
+
+			CurrentClass = create ClassInfo(className)
+		}
+
+		indentationStruct.Increment()
+
+		// Add compositions, if they exist
+		if ctx.CompositionList() != nil {
+			if aliasType != nil {
+
+				panic(fmt.Sprintf(
+					"\nClass %s cannot have composition, because it is an alias of %s\n"+
+						"To do it, remove the alias type, or remove the composition\n\n"+
+						"    Current class declaration:\n"+
+						"        class %s as %s use %s \n\n"+
+						"    Fix option 1, removing type alias: \n"+
+						"        class %s use %s \n\n"+
+						"    Fix option 2, removing composition: \n"+
+						"        class %s as %s \n",
+					className,
+					aliasType.GetText(),
+					className,
+					aliasType.GetText(),
+					ctx.CompositionList().GetText(),
+					className,
+					ctx.CompositionList().GetText(),
+					className,
+					aliasType.GetText(),
+				))
+			}
+
+			foreach ctx.CompositionList().AllLeftHandSide() as compCtx {
+				compName := compCtx.GetText()
+				this.AddStringToStruct(fmt.Sprintf("%s\n", compName))
+
+				if ClassInfoMap[compName] == nil {
+					ClassInfoMap[compName] = &ClassInfo{
+						Name: compName,
+					}
+				}
+
+				CurrentClass.AddUse(*ClassInfoMap[compName])
+			}
+		}
+
+		if ctx.MustInterfaceList() != nil {
+			foreach ctx.MustInterfaceList().AllIDENTIFIER() as interfaceCtx {
+				interfaceName := interfaceCtx.GetText()
+
+				CurrentClass.AddMustInterfaceList(*InterfaceInfoMap[interfaceName])
+			}
+		}
+	}
+
+	// ExitClassDeclaration is called when exiting the classDeclaration production.
+	// It finalizes the struct declaration by closing the brace and adding a newline.
+	func ExitClassDeclaration(ctx *parser.ClassDeclarationContext) {
+		indentationStruct.Decrement()
+
+		if CurrentClass.Alias == "" {
+			this.AddStringToStruct("}\n")
+		}
+
+		this.AddStringToStruct("\n")
+
+		ClassInfoMap[CurrentClass.Name] = CurrentClass
+
+		if !CurrentClass.HasConstructor() && CurrentClass.Alias == "" {
+			this.AddStringToStruct(fmt.Sprintf(
+				"func (%s) Constructor() *%s {\n"+
+					"    this := new(%s)\n"+
+					"    return this\n"+
+					"}\n\n",
+				CurrentClass.Name,
+				CurrentClass.Name,
+				CurrentClass.Name)
+			)
+		}
+
+		// CurrentClass.PrintClassInfo()
+
+		if !CurrentClass.ImplementsAllInterfaces() {
+			panic(fmt.Sprintf("Class '%s' does not implement all interfaces on 'must' list\n", CurrentClass.Name))
+		}
+
+		CurrentClass = nil
+	}
+
+	// EnterFieldDeclaration is called when entering the fieldDeclaration production.
+	//
+	// This listener is responsible for generating the Go code for the field being
+	// declared. It retrieves the field name and type from the context and writes a
+	// line of code to the struct builder in the form of "fieldName fieldType".
+	func EnterFieldDeclaration(ctx *parser.FieldDeclarationContext) {
+		fieldName := ctx.IDENTIFIER().GetText()
+		fieldType := ctx.VarType().GetText()
+		this.AddStringToStruct(fmt.Sprintf("%s %s\n", fieldName, fieldType))
+
+		CurrentClass.AddField(fieldName, fieldType)
+	}
+
+	// EnterMethodDeclaration is called when entering the methodDeclaration production.
+	//
+	// This listener is responsible for generating the Go code for the method
+	// being declared. This can be either a constructor or a regular method.
+	//
+	// For constructors, the listener will generate the Go code:
+	//
+	//	func New<ClassName>(<params>) *<ClassName> {
+	//	    this := new(<ClassName>)
+	//	}
+	//
+	// For regular methods, the listener will generate the Go code:
+	//
+	// func (this *<ClassName>) <MethodName>(<params>) {
+	// }
+	//
+	// The listener is also responsible for finding the parent class of the method
+	// by traversing up the tree of contexts.
+	func EnterMethodDeclaration(ctx *parser.MethodDeclarationContext) {
+		indentationMethod.Increment()
+		methodName := ctx.IDENTIFIER().GetText()
+
+		method := create Method(methodName, []Arg{}, []string{})
+
+		var className string
+		parent := ctx.GetParent()
+		for parent != nil {
+			if classCtx, ok := parent.(*parser.ClassDeclarationContext); ok {
+				className = classCtx.IDENTIFIER().GetText()
+				break
+			}
+			parent = parent.GetParent()
+		}
+
+		if className == "" {
+			this.AddStringToMethod(fmt.Sprintf("func %s(", methodName), false)
+		} else {
+			isStatic := ctx.STATIC() != nil
+
+			if methodName == "Constructor" || isStatic {
+				this.AddStringToMethod(fmt.Sprintf("func (%s) %s(", className, methodName), false)
+			} else {
+				this.AddStringToMethod(fmt.Sprintf("func (this *%s) %s(", className, methodName), false)
+			}
+		}
+
+		params := []string{}
+		if ctx.ParameterList() != nil {
+			foreach ctx.ParameterList().AllParameter() as paramCtx {
+				paramName := paramCtx.IDENTIFIER().GetText()
+				if paramCtx.VarType() == nil {
+					panic(fmt.Sprintf(`param must have a type, got "%s" on line %d`, paramCtx.GetText(), paramCtx.GetStart().GetLine()))
+				}
+	
+				paramType := paramCtx.VarType().GetText()
+
+				if paramCtx.ELLIPSIS() != nil {
+					paramType = "..." + paramType
+				}
+
+				params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+				method.AddArg(paramName, paramType)
+			}
+		}
+		this.AddStringToMethod(strings.Join(params, ", "), false)
+		this.AddStringToMethod(") ", false)
+
+		if ctx.ReturnType() != nil && methodName != "Constructor" {
+			if ctx.ReturnType().ReturnTypeList() != nil {
+				returnTypes := []string{}
+				foreach ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() as paramCtx {
+					returnType := paramCtx.VarType().GetText()
+					returnTypes = append(returnTypes, returnType)
+					method.AddReturnType(returnType)
+				}
+				this.AddStringToMethod(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")), false)
+			} else if singleReturn := ctx.ReturnType().VarType(); singleReturn != nil {
+				returnType := singleReturn.GetText()
+				this.AddStringToMethod(fmt.Sprintf("%s ", returnType), false)
+				method.AddReturnType(returnType)
+			}
+		} else if methodName == "Constructor" {
+			this.AddStringToMethod(fmt.Sprintf("*%s ", className), false)
+		}
+
+		this.AddStringToMethod("{\n", false)
+
+		if methodName == "Constructor" {
+			this.AddStringToMethod("this := new(" + className + ")\n")
+		}
+
+		if CurrentClass != nil {
+			CurrentClass.AddMethod(*method)
+		}
+	}
+
+	// ExitMethodDeclaration is called when exiting the methodDeclaration production.
+	// It retrieves the method name and finalizes the method's Go code representation.
+	// For constructors, it appends a return statement returning the constructed instance.
+	func ExitMethodDeclaration(ctx *parser.MethodDeclarationContext) {
+		methodName := ctx.IDENTIFIER().GetText()
+		if methodName == "Constructor" {
+			this.AddStringToMethod("return this\n")
+		}
+
+		indentationMethod.Decrement()
+		this.AddStringToMethod("\n")
+		this.AddStringToMethod("}\n\n")
+	}
+
+	// EnterAssignment is called when entering the assignment production.
+	// It retrieves the variable name and expression from the context and
+	// writes a line of code to the method builder in the form of
+	// "this.<varName> = <expr>".
+	func EnterAssignment(ctx *parser.AssignmentContext) {
+		// Process the left-hand side (lhs) of the assignment
+		var lhs string
+		var expr string
+		var lhsPieces []string
+		operation := "="
+
+		if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
+			ssParent := ctx.GetParent().GetParent().GetParent()
+			if _, isFor := ssParent.(*parser.ForStatementContext); isFor {
+				return
+			}
+		}
+
+		foreach ctx.AllAssignmentLeftHandSide() as alhs {
+			lhsPieces = append(lhsPieces, alhs.GetText())
+		}
+	
+		lhs = strings.Join(lhsPieces, ", ")
+
+		if ctx.AssignmentOperator() != nil {
+			operation = ctx.AssignmentOperator().GetText()
+		}
+
+		primaryExpression := ctx.Expression().PrimaryExpression()
+
+		showOnlyLhsAndOperation := primaryExpression.CreateObjectDeclaration() != nil || 
+			primaryExpression.AnonimousFunctionDeclaration() != nil
+
+		// fmt.Printf("lhs: %s, operation: %s, expr: %s, showOnlyLhsAndOperation: %v\n", lhs, operation, expr, showOnlyLhsAndOperation)
+
+		if showOnlyLhsAndOperation {
+			this.AddStringToMethod(fmt.Sprintf("%s %s ", lhs, operation))
+			return
+		}
+
+		expr = ctx.Expression().GetText()
+		this.AddStringToMethod(fmt.Sprintf("%s %s %s\n", lhs, operation, expr))
+
+	}
+
+	// EnterReturnOperation is called when entering the returnOperation production.
+	// It is responsible for generating the Go code for a return statement.
+	// If the return operation has an expression, it is included in the generated code.
+	// Otherwise, a simple "return" is generated.
+	func EnterReturnOperation(ctx *parser.ReturnOperationContext) {
+		if ctx.ArgumentList() != nil {
+			args := []string{}
+			foreach ctx.ArgumentList().AllExpression() as arg {
+				args = append(args, arg.GetText())
+			}
+			this.AddStringToMethod(fmt.Sprintf("return %s\n", strings.Join(args, ", ")))
+
+			return
+
+		}
+
+		this.AddStringToMethod("return\n")
+	}
+
+	// EnterMethodCallExpression is called when entering the methodCall production.
+	// It retrieves the method name and the arguments from the context and
+	// writes a line of code to the method builder in the form of
+	// "<methodName>(<args>)".
+	func EnterMethodCall(ctx *parser.MethodCallContext) {
+		var methodName string
+
+		if IsInside(ctx, "*parser.AssignmentContext", "*parser.ReturnOperationContext", "*parser.VarStatementContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+			return
+		}
+	
+		if IsInside(ctx, "*parser.IfStatementContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") && !IsInside(ctx, "*parser.BlockContext") {
+			return
+		}
+	
+		if IsInside(ctx.GetParent(), "*parser.MethodCallContext") {
+			return
+		}
+	
+		isDuplicated := t.ProcessedRulesList.IsDuplicate(
+			ctx,
+			"*parser.AssignmentContext",
+			"*parser.ReturnOperationContext",
+			"*parser.VarStatementContext",
+			"*parser.AnonimousFunctionDeclarationContext",
+			"*parser.IfStatementContext",
+			"*parser.ArgumentListContext",
+			"*parser.ClassicForLoopContext",
+			"*parser.RangeForLoopContext",
+			"*parser.ConditionForLoopContext",
+			"*parser.ForeachStatementContext",
+			"*parser.SwitchStatementContext",
+		)
+	
+		if isDuplicated {
+			return
+		}
+
+		if ctx.IDENTIFIER() != nil {
+			methodName = ctx.IDENTIFIER().GetText()
+		} else if ctx.LeftHandSide() != nil {
+			methodName = ctx.LeftHandSide().GetText()
+		} else {
+			fmt.Println("methodCall: neither IDENTIFIER nor leftHandSide is present\n\n")
+		}
+
+		args := []string{}
+		if ctx.ArgumentList() != nil {
+			foreach ctx.ArgumentList().AllExpression() as arg {
+				args = append(args, arg.GetText())
+			}
+		}
+
+		this.AddStringToMethod(fmt.Sprintf("%s(%s)\n", methodName, strings.Join(args, ", ")))
+	}
+
+	// EnterCreateObjectDeclaration is called when entering the createObjectDeclaration production.
+	// It retrieves the class name and the arguments from the context and writes a line of code to
+	// the method builder in the form of "<className>{}.Constructor(<args>)".
+	func EnterCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
+		className := ctx.IDENTIFIER().GetText()
+
+		args := []string{}
+		if ctx.ArgumentList() != nil {
+			foreach ctx.ArgumentList().AllExpression() as arg {
+				args = append(args, arg.GetText())
+			}
+		}
+
+		calledClass := ClassInfoMap[className]
+		if calledClass != nil && calledClass.Alias != "" {
+			this.AddStringToMethod(fmt.Sprintf("%s(%s)", className, strings.Join(args, ", ")), false)
+			return
+		}
+
+		this.AddStringToMethod(fmt.Sprintf("%s{}.Constructor(%s)", className, strings.Join(args, ", ")), false)
+	}
+
+	// EnterPackageDeclaration is called when entering the packageDeclaration production.
+	// It generates the Go code for the package declaration in the form of "package <packageName>".
+	func EnterPackageDeclaration(ctx *parser.PackageDeclarationContext) {
+		this.AddStringToStruct(fmt.Sprintf("package %s\n\n", ctx.IDENTIFIER().GetText()), false)
+	}
+
+	// EnterImportsDeclaration is called when entering the importsDeclaration production.
+	// It processes the list of import strings and generates the Go code for the import
+	// declaration in the form of "import (<list of import strings>)".
+	func EnterImportsDeclaration(ctx *parser.ImportsDeclarationContext) {
+		if len(ctx.AllSTRING()) == 0 {
+			panic("No imports found")
+		}
+
+		if len(ctx.AllSTRING()) == 1 {
+			this.AddStringToStruct(fmt.Sprintf("import %s\n\n", ctx.STRING(0).GetText()), false)
+			return
+		}
+
+		var importList []string
+		foreach ctx.AllSTRING() as importCtx {
+			importList = append(importList, importCtx.GetText())
+		}
+
+		this.AddStringToStruct(fmt.Sprintf("import (\n    %s\n)\n\n", strings.Join(importList, "\n    ")), false)
+	}
+
+	// ExitCreateObjectDeclaration is called when exiting the createObjectDeclaration production.
+	// It adds a newline to the method builder to separate the create object declaration from
+	// any other code.
+	func ExitCreateObjectDeclaration(ctx *parser.CreateObjectDeclarationContext) {
+		this.AddStringToMethod("\n")
+	}
+
+	// EnterInterfaceDeclaration is called when entering the interfaceDeclaration production.
+	// It generates the Go code for an interface declaration by writing a line of code to the
+	// struct builder in the form of "type <interfaceName> interface {".
+	func EnterInterfaceDeclaration(ctx *parser.InterfaceDeclarationContext) {
+		interfaceName := ctx.IDENTIFIER().GetText()
+		this.AddStringToStruct(fmt.Sprintf("type %s interface {\n", interfaceName), false)
+
+		indentationStruct.Increment()
+
+		CurrentInterface = &InterfaceInfo{
+			Name: interfaceName,
+		}
+	}
+
+	// ExitInterfaceDeclaration is called when exiting the interfaceDeclaration production.
+	// It finalizes the interface declaration by writing a closing brace and adding a newline.
+	func ExitInterfaceDeclaration(ctx *parser.InterfaceDeclarationContext) {
+		indentationStruct.Decrement()
+		this.AddStringToStruct("}\n\n", false)
+
+		InterfaceInfoMap[CurrentInterface.Name] = CurrentInterface
+
+		CurrentInterface = nil
+
+		// fmt.Printf(`%+v\n`, InterfaceInfoMap)
+	}
+
+	// EnterInterfaceMethod is called when entering the interfaceMethod production.
+	// It generates the Go code for a single interface method by writing a line of code to the
+	// struct builder in the form of "<methodName>(<params>) (<returnTypes>)".
+	// It also keeps track of the methods in the interface by adding the method to the
+	// InterfaceInfo's Methods list.
+	func EnterInterfaceMethod(ctx *parser.InterfaceMethodContext) {
+		if ctx == nil {
+			fmt.Println("Erro: ctx é nil")
+			return
+		}
+
+		methodName := ctx.IDENTIFIER().GetText()
+		this.AddStringToStruct(fmt.Sprintf("%s(", methodName))
+
+		method := create Method(methodName)
+
+		params := []string{}
+		if ctx.ParameterList() != nil {
+			foreach ctx.ParameterList().AllParameter() as paramCtx {
+				paramName := paramCtx.IDENTIFIER().GetText()
+				paramType := paramCtx.VarType().GetText()
+
+				params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+				method.AddArg(paramName, paramType)
+			}
+		}
+
+		this.AddStringToStruct(strings.Join(params, ", "), false)
+		this.AddStringToStruct(")", false)
+
+		if ctx.ReturnType() != nil {
+			if ctx.ReturnType().ReturnTypeList() != nil {
+				returnTypes := []string{}
+				foreach ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() as paramCtx {
+					returnType := paramCtx.VarType().GetText()
+					returnTypes = append(returnTypes, returnType)
+					method.AddReturnType(returnType)
+				}
+				this.AddStringToStruct(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")), false)
+			} else if singleReturn := ctx.ReturnType().VarType(); singleReturn != nil {
+				returnType := singleReturn.GetText()
+				this.AddStringToStruct(fmt.Sprintf("%s ", returnType), false)
+				method.AddReturnType(returnType)
+			}
+		}
+
+		CurrentInterface.AddMethod(*method)
+	}
+
+	// ExitInterfaceMethod is called when exiting the interfaceMethod production.
+	// It adds a newline to the struct builder to separate the interface method
+	// declaration from any subsequent code.
+	func ExitInterfaceMethod(ctx *parser.InterfaceMethodContext) {
+		this.AddStringToStruct("\n")
+	}
+
+	// EnterVarStatement is called when entering the varStatement production.
+	// It generates the Go code for a single variable declaration by writing a line of code to the
+	// method builder in the form of "var <varName> <varType> = <expression>".
+	// If the variable statement does not have an expression, it is generated as "var <varName> <varType>".
+	// If the variable statement does not have a type, it is generated as "var <varName> := <expression>".
+	func EnterVarStatement(ctx *parser.VarStatementContext) {
+		varName := ctx.IDENTIFIER().GetText()
+		varType := ""
+
+		if ctx.VarType() != nil {
+			varType = ctx.VarType().GetText()
+
+			if ctx.Expression() != nil {
+				this.AddStringToMethod(fmt.Sprintf("var %s %s = %s\n", varName, varType, ctx.Expression().GetText()))
+				return
+			}
+		}
+
+		if ctx.Expression() != nil {
+			this.AddStringToMethod(fmt.Sprintf("var %s := %s\n", varName, ctx.Expression().GetText()))
+			return
+		}
+
+		this.AddStringToMethod(fmt.Sprintf("var %s %s\n", varName, varType))
+	}
+
+	// EnterIfStatement is called when entering the ifStatement production.
+	//
+	// It generates the Go code for an if statement. If the if statement has an
+	// assignment, it is included in the generated code. Otherwise, the if statement
+	// must have an expression. If the expression is not present, a panic is triggered.
+	//
+	// The listener also increments the indentation level for the method to correctly
+	// indent the if statement's body.
+	func EnterIfStatement(ctx *parser.IfStatementContext) {
+		isElseIf := ctx.GetParent() != nil && reflect.TypeOf(ctx.GetParent()).String() == "*parser.ElseStatementContext"
+
+		if isElseIf {
+			this.AddStringToMethod("if ", false)
+		} else {
+			this.AddStringToMethod("if ")
+		}
+
+		if ctx.Assignment() != nil {
+			this.AddStringToMethod(ctx.Assignment().GetText()+";", false)
+		}
+
+		if ctx.Comparison() != nil {
+			this.AddStringToMethod(ctx.Comparison().GetText(), false)
+		} else {
+			panic(fmt.Sprintf(`if must have an condition, got "%s"`, ctx.GetText()))
+		}
+
+		this.AddStringToMethod(" {\n", false)
+
+		indentationMethod.Increment()
+	}
+
+	// ExitIfStatement is called when exiting the ifStatement production.
+	//
+	// It decrements the indentation level to correctly indent any code following the
+	// if statement and adds a closing brace to the method builder.
+	func ExitIfStatement(ctx *parser.IfStatementContext) {
+		indentationMethod.Decrement()
+
+		if ctx.ElseStatement() == nil {
+			this.AddStringToMethod("}\n")
+		}
+	}
+
+	// EnterElseStatement is called when entering the elseStatement production.
+	//
+	// It decrements the indentation level and appends "} else " to the method builder.
+	// If the else statement has an if statement, it decrements the indentation level.
+	// Otherwise, it appends "{\n" to the method builder and increments the indentation
+	// level.
+	func EnterElseStatement(ctx *parser.ElseStatementContext) {
+		indentationMethod.Decrement()
+
+		this.AddStringToMethod("} else ")
+
+		if ctx.IfStatement() != nil {
+			indentationMethod.Decrement()
+		} else {
+			this.AddStringToMethod("{\n", false)
+		}
+
+		indentationMethod.Increment()
+	}
+
+	// ExitElseStatement is called when exiting the elseStatement production.
+	// It decrements the indentation level to correctly indent any code following
+	// the else statement. If the else statement does not contain an if statement,
+	// it appends a closing brace to the method builder.
+	func ExitElseStatement(ctx *parser.ElseStatementContext) {
+		indentationMethod.Decrement()
+
+		if ctx.IfStatement() == nil {
+			this.AddStringToMethod("}\n")
+		}
+
+		if ctx.IfStatement() == nil {
+			indentationMethod.Increment()
+		}
+	}
+
+	// EnterSliceDeclaration is called when entering the sliceDeclaration production.
+	// It generates the Go code for a slice declaration by writing a line of code
+	// to the method builder in the form of "var <sliceName> []<elementType>".
+	func EnterSliceDeclaration(ctx *parser.SliceDeclarationContext) {
+		slcType := ctx.IDENTIFIER().GetText()
+		values := []string{}
+
+		if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+			return
+		}
+
+		foreach ctx.AllPrimaryExpression() as expr {
+			values = append(values, expr.GetText())
+		}
+
+		this.AddStringToMethod(fmt.Sprintf("[]%s{%s}\n", slcType, strings.Join(values, ", ")), true)
+	}
+
+	// EnterForStatement is called when entering the forStatement production.
+	// It writes a line of code to the method builder in the form of "for"
+	// followed by the loop condition and increments the indentation level.
+	// It then writes a line of code to the method builder depending on the type
+	// of for loop encountered.
+	//
+	// The following cases are handled:
+	// - ClassicForLoop: writes the initialization statement, condition, and post-loop
+	// statement to the method builder.
+	// - RangeForLoop: writes the range keyword followed by the iterable expression
+	// to the method builder.
+	// - ConditionForLoop: writes the condition expression to the method builder.
+	// - InfiniteForLoop: writes a comment to the method builder indicating an infinite
+	// loop.
+	func EnterForStatement(ctx *parser.ForStatementContext) {
+		this.AddStringToMethod("for ")
+		indentationMethod.Increment()
+
+		switch true {
+		case ctx.ClassicForLoop() != nil:
+			if ctx.ClassicForLoop().SimpleStatement(0) != nil {
+				this.AddStringToMethod(ctx.ClassicForLoop().SimpleStatement(0).GetText(), false)
+			}
+			this.AddStringToMethod("; ", false)
+
+			if ctx.ClassicForLoop().Expression() != nil {
+				this.AddStringToMethod(ctx.ClassicForLoop().Expression().GetText(), false)
+			}
+			this.AddStringToMethod("; ", false)
+
+			if ctx.ClassicForLoop().SimpleStatement(1) != nil {
+				this.AddStringToMethod(ctx.ClassicForLoop().SimpleStatement(1).GetText(), false)
+			}
+
+		case ctx.RangeForLoop() != nil:
+			if ctx.RangeForLoop().ExpressionList() != nil {
+				this.AddStringToMethod(ctx.RangeForLoop().ExpressionList().GetText()+" := ", false)
+			}
+
+			this.AddStringToMethod(" range ", false)
+			if ctx.RangeForLoop().Expression() != nil {
+				this.AddStringToMethod(ctx.RangeForLoop().Expression().GetText(), false)
+			}
+
+		case ctx.ConditionForLoop() != nil:
+			if ctx.ConditionForLoop().Expression() != nil {
+				this.AddStringToMethod(ctx.ConditionForLoop().Expression().GetText(), false)
+			}
+
+		case ctx.InfiniteForLoop() != nil:
+			this.AddStringToMethod("/* Infinite for loop */", false)
+		}
+
+		this.AddStringToMethod(" {\n", false)
+	}
+
+	// ExitForStatement is called when exiting the forStatement production.
+	// It decrements the indentation level and appends a closing brace to the method builder.
+	func ExitForStatement(ctx *parser.ForStatementContext) {
+		indentationMethod.Decrement()
+
+		this.AddStringToMethod("}\n")
+	}
+
+	// EnterForeachStatement is called when entering the foreachStatement production.
+	// It generates the Go code for a foreach statement by writing a line of code
+	// to the method builder in the form of "for <key>, <value> := range <collection> {".
+	// The listener also increments the indentation level for the method to correctly
+	// indent the foreach statement's body.
+	func EnterForeachStatement(ctx *parser.ForeachStatementContext) {
+		collection := ctx.Expression().GetText()
+		keyOrValue := ctx.IDENTIFIER(0)
+		valueOnly := ctx.IDENTIFIER(1)
+
+		if valueOnly == nil {
+			this.AddStringToMethod(fmt.Sprintf("for _, %s := range %s {\n", keyOrValue, collection))
+		} else {
+			this.AddStringToMethod(fmt.Sprintf("for %s, %s := range %s {\n", keyOrValue, valueOnly, collection))
+		}
+
+		indentationMethod.Increment()
+	}
+
+	// ExitForeachStatement is called when exiting the foreachStatement production.
+	// It decrements the indentation level and appends a closing brace to the method builder.
+	func ExitForeachStatement(ctx *parser.ForeachStatementContext) {
+		indentationMethod.Decrement()
+		this.AddStringToMethod("}\n")
+	}
+
+	// EnterContinueOperation is called when entering the continueOperation production.
+	// It generates the Go code for a continue statement, optionally including a
+	// label if specified.
+	func EnterContinueOperation(ctx *parser.ContinueOperationContext) {
+		if ctx.IDENTIFIER() != nil {
+			this.AddStringToMethod(fmt.Sprintf("continue %s\n", ctx.IDENTIFIER().GetText()))
+			return
+		}
+
+		this.AddStringToMethod("continue\n")
+	}
+
+	// EnterBreakOperation is called when entering the breakOperation production.
+	// It generates the Go code for a break statement, optionally including a
+	// label if specified.
+	func EnterBreakOperation(ctx *parser.BreakOperationContext) {
+		if ctx.IDENTIFIER() != nil {
+			this.AddStringToMethod(fmt.Sprintf("break %s\n", ctx.IDENTIFIER().GetText()))
+			return
+		}
+
+		this.AddStringToMethod("break\n")
+	}
+
+	// EnterSwitchStatement is called when entering the switchStatement production.
+	// It generates the Go code for a switch statement by writing "switch"
+	// followed by the optional expression and an opening brace to the method builder.
+	func EnterSwitchStatement(ctx *parser.SwitchStatementContext) {
+		this.AddStringToMethod("switch ")
+		if ctx.Expression() != nil {
+			this.AddStringToMethod(ctx.Expression().GetText(), false)
+		}
+		this.AddStringToMethod(" {\n", false)
+
+		indentationMethod.Increment()
+	}
+
+	// ExitSwitchStatement is called when exiting the switchStatement production.
+	// It appends a closing brace to the method builder to correctly close the switch block.
+	func ExitSwitchStatement(ctx *parser.SwitchStatementContext) {
+		indentationMethod.Decrement()
+		this.AddStringToMethod("}\n")
+	}
+
+	// EnterCaseBlock is called when entering the caseBlock production.
+	// It generates the Go code for a case block by writing "case" followed by the
+	// list of expressions and a colon to the method builder. The indentation level
+	// is then incremented to correctly indent the case block's body.
+	func EnterCaseBlock(ctx *parser.CaseBlockContext) {
+		this.AddStringToMethod("case ")
+		if ctx.ExpressionList() != nil {
+			this.AddStringToMethod(ctx.ExpressionList().GetText(), false)
+		}
+		this.AddStringToMethod(":\n", false)
+		indentationMethod.Increment()
+	}
+
+	// EnterListAccess is called when entering the listAccess production.
+	// It generates the Go code for accessing a list element by writing a line of
+	// code to the method builder in the form of "<varName>[".
+	// The listener also checks if the listAccess is inside an argumentList, assignment
+	// or varStatement and if so, it doesn't do anything.
+	func EnterListAccess(ctx *parser.ListAccessContext) {
+		if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
+			return
+		}
+
+		fmt.Printf("%s\n", ctx.GetText())
+
+		this.AddStringToMethod(ctx.LeftHandSide().GetText()+"[", false)
+	}
+
+	// ExitListAccess is called when exiting the listAccess production.
+	// It appends a closing bracket to the method builder to complete the list access expression.
+	// If the listAccess is inside an argumentList, assignment, or varStatement, it does nothing.
+	func ExitListAccess(ctx *parser.ListAccessContext) {
+		if IsInside(ctx, "*parser.ArgumentListContext", "*parser.AssignmentContext", "*parser.VarStatementContext") {
+			return
+		}
+
+		this.AddStringToMethod("]", false)
+	}
+
+	// ExitCaseBlock is called when exiting the caseBlock production.
+	// It decrements the indentation level to correctly indent any code following
+	// the case block.
+	func ExitCaseBlock(ctx *parser.CaseBlockContext) {
+		indentationMethod.Decrement()
+	}
+
+	// EnterDefaultBlock is called when entering the defaultBlock production.
+	// It generates the Go code for a default block within a switch statement by
+	// appending "default:" followed by a newline to the method builder. The listener
+	// also increments the indentation level for the method to correctly indent the
+	// default block's body.
+	func EnterDefaultBlock(ctx *parser.DefaultBlockContext) {
+		this.AddStringToMethod("default:\n")
+		indentationMethod.Increment()
+	}
+
+	// ExitDefaultBlock is called when exiting the defaultBlock production.
+	// It decrements the indentation level to correctly indent any code following
+	// the default block.
+	func ExitDefaultBlock(ctx *parser.DefaultBlockContext) {
+		indentationMethod.Decrement()
+	}
+
+	// EnterIncrementOrDecrementStatement is called when entering the
+	// incrementOrDecrementStatement production. It generates the Go code for
+	// an increment or decrement statement by writing a line of code to the
+	// method builder in the form of "<varName>++" or "<varName>--". The
+	// listener also checks if the increment or decrement statement is inside
+	// an assignment and if so, it does nothing.
+	func EnterIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
+		if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+			return
+		}
+
+		this.AddStringToMethod(ctx.GetText() + "\n")
+	}
+
+	// ExitIncrementOrDecrementStatement is called when exiting the
+	// incrementOrDecrementStatement production.
+	//
+	// If the increment or decrement statement is inside an assignment, it does nothing.
+	// Otherwise, it does nothing as well, since the EnterIncrementOrDecrementStatement
+	// method already generated the necessary code for the increment or decrement statement.
+	func ExitIncrementOrDecrementStatement(ctx *parser.IncrementOrDecrementStatementContext) {
+		if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+			return
+		}
+	}
+
+	// EnterAnonimousFunctionDeclaration is called when entering the anonimousFunctionDeclaration production.
+	// It generates the Go code for an anonymous function declaration by writing a line of code to the
+	// method builder in the form of "func (<params>) <returnType> {". The listener is also responsible
+	// for indenting the body of the anonymous function.
+	func EnterAnonimousFunctionDeclaration(ctx *parser.AnonimousFunctionDeclarationContext) {
+		var params []string
+
+		this.AddStringToMethod("func (", false)
+
+		if ctx.ParameterList() != nil {
+			foreach ctx.ParameterList().AllParameter() as paramCtx {
+				paramName := paramCtx.IDENTIFIER().GetText()
+				paramType := paramCtx.VarType().GetText()
+
+				if paramCtx.ELLIPSIS() != nil {
+					paramType = "..." + paramType
+				}
+
+				params = append(params, fmt.Sprintf("%s %s", paramName, paramType))
+			}
+		}
+
+		this.AddStringToMethod(strings.Join(params, ", "), false)
+		this.AddStringToMethod(") ", false)
+
+		if ctx.ReturnType() != nil {
+
+			if ctx.ReturnType().ReturnTypeList() != nil {
+				returnTypes := []string{}
+				foreach ctx.ReturnType().ReturnTypeList().AllReturnTypeSingle() as paramCtx{
+					returnType := paramCtx.VarType().GetText()
+					returnTypes = append(returnTypes, returnType)
+				}
+				this.AddStringToMethod(fmt.Sprintf("(%s) ", strings.Join(returnTypes, ", ")), false)
+			} else if singleReturn := ctx.ReturnType().VarType(); singleReturn != nil {
+				returnType := singleReturn.GetText()
+				this.AddStringToMethod(fmt.Sprintf("%s ", returnType), false)
+			}
+		}
+
+		this.AddStringToMethod("{\n", false)
+		indentationMethod.Increment()
+	}
+
+	// ExitAnonimousFunctionDeclaration is called when exiting the anonimousFunctionDeclaration production.
+	// It finalizes the anonymous function declaration by writing a closing brace to the method builder
+	// and decrementing the indentation level.
+	func ExitAnonimousFunctionDeclaration(ctx *parser.AnonimousFunctionDeclarationContext) {
+		indentationMethod.Decrement()
+		this.AddStringToMethod("}\n")
+	}
+
+	func EnterInterfaceTypeVerification(ctx *parser.InterfaceTypeVerificationContext) {
+		isDuplicated := this.ProcessedRulesList.IsDuplicate(
+			ctx,
+			"*parser.AssignmentContext",
+			"*parser.ReturnOperationContext",
+			"*parser.VarStatementContext",
+			"*parser.AnonimousFunctionDeclarationContext",
+			"*parser.IfStatementContext",
+			"*parser.ArgumentListContext",
+			"*parser.ClassicForLoopContext",
+			"*parser.RangeForLoopContext",
+			"*parser.ConditionForLoopContext",
+			"*parser.ForeachStatementContext",
+			"*parser.SwitchStatementContext",
+			"*parser.MethodCallContext",
+		)
+	
+		if isDuplicated {
+			return
+		}
+		this.AddStringToMethod(ctx.GetText(), false)
+	}
+
+	func EnterEveryRule(ctx antlr.ParserRuleContext) {
+		// Can be used for logic before entering any rule
+		// DebugContext(ctx)
+		this.ProcessedRulesList.AddRule(ctx)
+	}
+
+	func ExitEveryRule(ctx antlr.ParserRuleContext) {
+		// Can be used for logic after exiting any rule
+	}
+
+	func VisitErrorNode(node antlr.ErrorNode) {
+		// Logic to handle error nodes, if necessary
+	}
+
+	func VisitTerminal(node antlr.TerminalNode) {
+		// Logic for terminal nodes, if necessary
+	}
+}
+
+interface GetTextInterface {
+	GetText() string
+}
+
+// DebugContext is a helper function for debugging ANTLR context objects.
+//
+// It prints the type of the context, the text it represents, and the methods
+// available on the context.
+//
+// It is intended for internal use only during development and should not be
+// used in production code.
+func DebugContext(ctx any) {
+	fmt.Println("-----------------\n")
+	fmt.Printf("%T\n\n\n", ctx)
+
+	_, ok := interface{}(ctx).(GetTextInterface)
+
+	if ok {
+		fmt.Println(ctx.(GetTextInterface).GetText())
+	}
+
+	t := reflect.TypeOf(ctx)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+
+	fmt.Println("\nMethods:\n")
+	for i := 0; i < t.NumMethod(); i++ {
+		method := t.Method(i)
+		fmt.Printf("- %s (%v)\n", method.Name, method.Type)
+	}
+
+}
+
+// IsInside checks if the given context is inside any of the external contexts.
+//
+// It recursively checks the parent of the given context until it finds a context
+// that matches one of the external context types.
+//
+// If the context matches one of the external context types, it returns true.
+// Otherwise, it returns false.
+func IsInside(ctx any, external ...string) bool {
+	for ctx != nil {
+		ctxType := reflect.TypeOf(ctx).String()
+
+		foreach external as ext {
+			if ctxType == ext {
+				return true
+			}
+		}
+
+		_, exists := reflect.TypeOf(ctx).MethodByName("GetParent")
+		if !exists {
+			return false
+		}
+
+		parent := reflect.ValueOf(ctx).MethodByName("GetParent").Call(nil)
+		if len(parent) == 0 || parent[0].IsNil() {
+			return false
+		}
+
+		ctx = parent[0].Interface()
+	}
+
+	return false
+}
+
+// InsideCompare compares the level of two external contexts inside the given context.
+//
+// It takes a context and two external context types as arguments and returns two
+// integers, each representing the level of the corresponding external context.
+// The level is the number of parent contexts that need to be traversed to reach the
+// external context.
+//
+// The function is used to compare the level of two external contexts and returns
+// the level of the external context that is deepest in the given context. If
+// one of the external contexts is not present in the given context, the function
+// returns -1 for that context.
+func InsideCompare(ctx any, external1 string, external2 string) (int, int) {
+	var levelInside = [2]int{-1, -1} // Inicializa com -1 (não encontrado)
+
+	foreach []string{external1, external2} as i, external {
+		level := 0
+		currentCtx := ctx
+
+		for currentCtx != nil {
+			ctxType := reflect.TypeOf(currentCtx).String()
+
+			// fmt.Println("i: ", i, " - level: ", level, " - ctxType: ", ctxType)
+
+			if ctxType == external {
+				levelInside[i] = level
+				break
+			}
+
+			_, exists := reflect.TypeOf(currentCtx).MethodByName("GetParent")
+			if !exists {
+				break
+			}
+
+			parent := reflect.ValueOf(currentCtx).MethodByName("GetParent").Call(nil)
+			if len(parent) == 0 || parent[0].IsNil() {
+				break
+			}
+
+			currentCtx = parent[0].Interface()
+			level++
+		}
+	}
+
+	return levelInside[0], levelInside[1]
+}
+
+// GetCaller returns the name of the caller function.
+//
+// It calls runtime.Caller(2) to get the program counter (pc) of the caller,
+// and then calls runtime.FuncForPC(pc).Name() to get the name of the caller.
+//
+// If there is an error, it returns "Unknown".
+func GetCaller() string {
+	pc, _, _, ok := runtime.Caller(2)
+	if !ok {
+		return "Unknown"
+	}
+	return runtime.FuncForPC(pc).Name()
+}
