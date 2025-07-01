@@ -282,5 +282,5 @@ func main() {
 - Fully compatible with Go – compiles to standard Go
 - Reduce boilerplate, making development faster
 
-Learn more: (repository link here)
+Learn more: [Here](https://github.com/carlosartur/gosugar)
 
