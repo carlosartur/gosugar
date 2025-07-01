@@ -55,7 +55,7 @@ class ClassInfo {
 	func AddField(name string, typ string) {
 		field := create Field(name, typ)
 
-		this.Fields = append(this.Fields, field)
+		this.Fields = append(this.Fields, *field)
 	}
 
 	// HasConstructor returns whether the class has a constructor method named "Constructor" or not.

@@ -27,8 +27,9 @@ class ProcessedRules {
 		line := ctx.GetStart().GetLine()
 		text := ctx.GetText()
 		typ := reflect.TypeOf(ctx).String()
+		newRule := create ProcessedRule(text, line, typ)
 	
-		this.rules = append(this.rules, create ProcessedRule(text, line, typ))
+		this.rules = append(this.rules, *newRule)
 	}
 	
 	func IsDuplicate(ctx antlr.ParserRuleContext, typ ...string) bool {
@@ -52,7 +53,7 @@ class ProcessedRules {
 	
 		builder.WriteString("[Rules]\n")
 	
-		for _, rule := range this.rules {
+		foreach this.rules as rule {
 			builder.WriteString("    ")
 			builder.WriteString(fmt.Sprintf("%d", rule.Line))
 			builder.WriteString("\n        Type: ")

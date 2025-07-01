@@ -28,7 +28,7 @@ class Method {
 
 	func AddArg(name string, argType string) {
 		newArg := create Arg(name, argType)
-		this.Args = append(this.Args, newArg)
+		this.Args = append(this.Args, *newArg)
 	}
 
 	// AddReturnType adds a return type to the method.

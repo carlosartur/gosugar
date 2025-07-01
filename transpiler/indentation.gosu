@@ -14,7 +14,7 @@ class Indentation as int32 {
 	}
 
 	func String() string {
-		return strings.Repeat(" ", int(this) * 4)
+		return strings.Repeat(" ", int(*this) * 4)
 	}	
 }
 

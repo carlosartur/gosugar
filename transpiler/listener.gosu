@@ -309,6 +309,10 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 		var lhsPieces []string
 		operation := "="
 
+		if this.ProcessedRulesList.IsDuplicate(ctx, "*parser.IfStatementContext") {
+			return
+		}
+
 		if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
 			ssParent := ctx.GetParent().GetParent().GetParent()
 			if _, isFor := ssParent.(*parser.ForStatementContext); isFor {
@@ -381,7 +385,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 			return
 		}
 	
-		isDuplicated := t.ProcessedRulesList.IsDuplicate(
+		isDuplicated := this.ProcessedRulesList.IsDuplicate(
 			ctx,
 			"*parser.AssignmentContext",
 			"*parser.ReturnOperationContext",
@@ -393,7 +397,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 			"*parser.RangeForLoopContext",
 			"*parser.ConditionForLoopContext",
 			"*parser.ForeachStatementContext",
-			"*parser.SwitchStatementContext",
+			"*parser.SwitchStatementContext"
 		)
 	
 		if isDuplicated {
@@ -515,7 +519,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 		methodName := ctx.IDENTIFIER().GetText()
 		this.AddStringToStruct(fmt.Sprintf("%s(", methodName))
 
-		method := create Method(methodName)
+		method := create Method(methodName, []Arg{}, []string{})
 
 		params := []string{}
 		if ctx.ParameterList() != nil {
@@ -564,23 +568,24 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 	// If the variable statement does not have a type, it is generated as "var <varName> := <expression>".
 	func EnterVarStatement(ctx *parser.VarStatementContext) {
 		varName := ctx.IDENTIFIER().GetText()
-		varType := ""
+		assignmentOperator := `=`
 
-		if ctx.VarType() != nil {
-			varType = ctx.VarType().GetText()
-
-			if ctx.Expression() != nil {
-				this.AddStringToMethod(fmt.Sprintf("var %s %s = %s\n", varName, varType, ctx.Expression().GetText()))
-				return
-			}
+		if ctx.AssignmentOperator() != nil {
+			assignmentOperator = ctx.AssignmentOperator().GetText()
 		}
 
-		if ctx.Expression() != nil {
-			this.AddStringToMethod(fmt.Sprintf("var %s := %s\n", varName, ctx.Expression().GetText()))
+		if ctx.VarType() != nil {
+			varName = fmt.Sprintf("%s %s", varName, ctx.VarType().GetText())
+		}
+
+		if ctx.VarValue() != nil {
+			varValue := ctx.VarValue().GetText()
+
+			this.AddStringToMethod(fmt.Sprintf("var %s %s %s\n", varName, assignmentOperator, varValue))
 			return
 		}
 
-		this.AddStringToMethod(fmt.Sprintf("var %s %s\n", varName, varType))
+		this.AddStringToMethod(fmt.Sprintf("var %s\n", varName))
 	}
 
 	// EnterIfStatement is called when entering the ifStatement production.
@@ -670,7 +675,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 		slcType := ctx.IDENTIFIER().GetText()
 		values := []string{}
 
-		if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+		if IsInside(ctx, "*parser.AssignmentContext", "*parser.AnonimousFunctionDeclarationContext", "*parser.ForeachStatementContext") {
 			return
 		}
 
@@ -970,7 +975,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 			"*parser.ConditionForLoopContext",
 			"*parser.ForeachStatementContext",
 			"*parser.SwitchStatementContext",
-			"*parser.MethodCallContext",
+			"*parser.MethodCallContext"
 		)
 	
 		if isDuplicated {
@@ -1077,7 +1082,7 @@ func IsInside(ctx any, external ...string) bool {
 // one of the external contexts is not present in the given context, the function
 // returns -1 for that context.
 func InsideCompare(ctx any, external1 string, external2 string) (int, int) {
-	var levelInside = [2]int{-1, -1} // Inicializa com -1 (não encontrado)
+	var levelInside = [2]int{-1, -1}
 
 	foreach []string{external1, external2} as i, external {
 		level := 0

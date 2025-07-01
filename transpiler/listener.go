@@ -314,6 +314,10 @@ func (t *TranspilerListener) EnterAssignment(ctx *parser.AssignmentContext) {
 	var lhsPieces []string
 	operation := "="
 
+	if t.ProcessedRulesList.IsDuplicate(ctx, "*parser.IfStatementContext") {
+		return
+	}
+
 	if _, isSimpleStatement := ctx.GetParent().(*parser.SimpleStatementContext); isSimpleStatement {
 		ssParent := ctx.GetParent().GetParent().GetParent()
 		if _, isFor := ssParent.(*parser.ForStatementContext); isFor {
@@ -569,23 +573,24 @@ func (t *TranspilerListener) ExitInterfaceMethod(ctx *parser.InterfaceMethodCont
 // If the variable statement does not have a type, it is generated as "var <varName> := <expression>".
 func (t *TranspilerListener) EnterVarStatement(ctx *parser.VarStatementContext) {
 	varName := ctx.IDENTIFIER().GetText()
-	varType := ""
+	assignmentOperator := `=`
 
-	if ctx.VarType() != nil {
-		varType = ctx.VarType().GetText()
-
-		if ctx.Expression() != nil {
-			t.AddStringToMethod(fmt.Sprintf("var %s %s = %s\n", varName, varType, ctx.Expression().GetText()))
-			return
-		}
+	if ctx.AssignmentOperator() != nil {
+		assignmentOperator = ctx.AssignmentOperator().GetText()
 	}
 
-	if ctx.Expression() != nil {
-		t.AddStringToMethod(fmt.Sprintf("var %s := %s\n", varName, ctx.Expression().GetText()))
+	if ctx.VarType() != nil {
+		varName = fmt.Sprintf("%s %s", varName, ctx.VarType().GetText())
+	}
+
+	if ctx.VarValue() != nil {
+		varValue := ctx.VarValue().GetText()
+
+		t.AddStringToMethod(fmt.Sprintf("var %s %s %s\n", varName, assignmentOperator, varValue))
 		return
 	}
 
-	t.AddStringToMethod(fmt.Sprintf("var %s %s\n", varName, varType))
+	t.AddStringToMethod(fmt.Sprintf("var %s\n", varName))
 }
 
 // EnterIfStatement is called when entering the ifStatement production.
@@ -683,7 +688,7 @@ func (t *TranspilerListener) EnterSliceDeclaration(ctx *parser.SliceDeclarationC
 	slcType := ctx.IDENTIFIER().GetText()
 	values := []string{}
 
-	if IsInside(ctx, "*parser.AssignmentContext") && !IsInside(ctx, "*parser.AnonimousFunctionDeclarationContext") {
+	if IsInside(ctx, "*parser.AssignmentContext", "*parser.AnonimousFunctionDeclarationContext", "*parser.ForeachStatementContext") {
 		return
 	}
 
@@ -1089,7 +1094,7 @@ func IsInside(ctx any, external ...string) bool {
 // one of the external contexts is not present in the given context, the function
 // returns -1 for that context.
 func InsideCompare(ctx any, external1 string, external2 string) (int, int) {
-	var levelInside = [2]int{-1, -1} // Inicializa com -1 (não encontrado)
+	var levelInside = [2]int{-1, -1}
 
 	for i, external := range []string{external1, external2} {
 		level := 0
@@ -1097,8 +1102,6 @@ func InsideCompare(ctx any, external1 string, external2 string) (int, int) {
 
 		for currentCtx != nil {
 			ctxType := reflect.TypeOf(currentCtx).String()
-
-			// fmt.Println("i: ", i, " - level: ", level, " - ctxType: ", ctxType)
 
 			if ctxType == external {
 				levelInside[i] = level

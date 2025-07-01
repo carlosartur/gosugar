@@ -4,7 +4,7 @@ import "strings"
 
 class Configs as map[string]string {
     static func NewConfigs(defaults map[string]string) Configs {
-        configs = make(Configs)
+        configs := make(Configs)
         foreach defaults as key, value {
             configs[key] = value
         }
@@ -12,11 +12,13 @@ class Configs as map[string]string {
     }
 
     func Get(key string) string {
-        return this[key]
+        configs := *this
+        return configs[key]
     }
 
     func Set(key string, value string) {
-        this[key] = value
+        configs := *this
+        configs[key] = value
     }
 
     func SetEnvContent(envContent string) {
@@ -48,7 +50,7 @@ class Configs as map[string]string {
 var CurrentConfigs Configs
 
 func init() {
-    var defaultConfigs map[string]string = {
+    var defaultConfigs map[string]string = map[string]string{
         "TRANSPILE_PATH": "dist",
     }
 
