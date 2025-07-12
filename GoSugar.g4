@@ -229,25 +229,26 @@ interfaceTypeVerification
 primaryExpression
     : createObjectDeclaration // 1
     | sliceDeclaration // 2
-    | sliceOrArrayLiteral // 3
-    | methodCall (DOT methodCall)? // 4
-    | STAR? IDENTIFIER // 5
-    | AMPERSAND? IDENTIFIER // 6
-    | concatenatedString // 7
-    | NIL // 8
-    | STRING // 9
-    | NUMBER // 10
-    | leftHandSide // 11
-    | listLiteral // 12
-    | negationExpression // 13
-    | '(' expression ')' // 14
-    | listAccess // 15
-    | anonimousFunctionDeclaration // 16
-    | incrementOrDecrementStatement // 17
-    | typeConversion // 18
-    | varType // 19
-    | interfaceTypeVerification // 20
-    | directCreateInstance // 21
+    | mapInitialization // 3
+    | sliceOrArrayLiteral // 4
+    | methodCall (DOT methodCall)? // 5
+    | STAR? IDENTIFIER // 6
+    | AMPERSAND? IDENTIFIER // 7
+    | concatenatedString // 8
+    | NIL // 9
+    | STRING // 10
+    | NUMBER // 11
+    | leftHandSide // 12
+    | listLiteral // 13
+    | negationExpression // 14
+    | '(' expression ')' // 15
+    | listAccess // 16
+    | anonimousFunctionDeclaration // 17
+    | incrementOrDecrementStatement // 18
+    | typeConversion // 19
+    | varType // 20
+    | interfaceTypeVerification // 21
+    | directCreateInstance // 22
     ;
 
 directCreateInstance
@@ -262,6 +263,7 @@ listLiteral
     : '{' (mapKeyValue (',' mapKeyValue)* ','?)? '}'
     | '{' (expression (',' expression)* ','?)? '}'
     | varType '{' (expression (',' expression)* ','?)? '}'
+    | varType '[' NUMBER? ']' '{' (expression (',' expression)* ','?)? '}'
     | varType '{}'
     ;
 
@@ -287,10 +289,15 @@ breakOperation
     : 'break' IDENTIFIER?
     ;
 
+varValue
+    : listLiteral
+    | expression
+    | mapInitialization
+    ;
+
 varStatement
-    : 'var' IDENTIFIER varType ('=' expression)?
-    | 'var' IDENTIFIER ':=' expression
-    | 'var' IDENTIFIER '=' expression
+    : 'var' IDENTIFIER varType (assignmentOperator varValue)?
+    | 'var' IDENTIFIER assignmentOperator varValue
     ;
 
 ifStatement
@@ -335,6 +342,10 @@ expressionList
     : expression (',' expression)*
     ;
 
+mapInitialization
+    : varType '{' (mapKeyValue (',' mapKeyValue)* ','?)? '}'
+    ;
+
 foreachStatement
     : 'foreach' expression 'as' IDENTIFIER (',' IDENTIFIER)? block
     ;
@@ -351,6 +362,7 @@ CREATE: 'create';
 STATIC: 'static';
 IDENTIFIER: '_' | [a-zA-Z][a-zA-Z_0-9]*;
 NUMBER: '-'? [0-9]+ ('.' [0-9]+)?;
+POSITIVE_INTEGER: [1-9][0-9]* | '0';
 DOT: '.';
 STRING: ('"' (ESC | ~('\\' | '"'))* '"') 
       | ('\'' (ESC | ~('\\' | '\''))* '\'') 

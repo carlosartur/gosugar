@@ -1,0 +1,118 @@
+package transpiler
+
+import (
+	"fmt"
+	"strings"
+)
+
+class Arg {
+	Name string
+	Type string
+
+	func Constructor(name string, typ string) {
+		this.Name = name
+		this.Type = typ
+	}
+}
+
+class Method {
+	Name string
+	Args []Arg
+	ReturnType []string
+
+	func Constructor(name string, args []Arg, returnType []string) {
+		this.Name = name
+		this.Args = args
+		this.ReturnType = returnType
+	}
+
+	func AddArg(name string, argType string) {
+		newArg := create Arg(name, argType)
+		this.Args = append(this.Args, *newArg)
+	}
+
+	// AddReturnType adds a return type to the method.
+	//
+	// The return type is added to the end of the existing return type list.
+	//
+	// If the method has no return type, a single return type is added.
+	// If the method has multiple return types, the new return type is added
+	// to the end of the list.
+	func AddReturnType(returnType string) {
+		this.ReturnType = append(this.ReturnType, returnType)
+	}
+
+	// Compare compares the current method with another method to determine
+	// if they are equivalent. It returns true if both methods have the same
+	// name, identical argument lists (including argument names and types),
+	// and identical return types. Otherwise, it returns false.
+	func Compare(other *Method) bool {
+		if this.Name != other.Name {
+			return false
+		}
+
+		if len(this.Args) != len(other.Args) {
+			return false
+		}
+
+		for i := range this.Args {
+			if this.Args[i].Name != other.Args[i].Name || this.Args[i].Type != other.Args[i].Type {
+				return false
+			}
+		}
+
+		if len(this.ReturnType) != len(other.ReturnType) {
+			return false
+		}
+
+		for i := range this.ReturnType {
+			if this.ReturnType[i] != other.ReturnType[i] {
+				return false
+			}
+		}
+
+		return true
+	}
+
+	// Signature returns a string representation of the method in the format
+	// "<name>(<args>) <returnType>", where <name> is the name of the method,
+	// <args> is a comma-separated list of argument names and types, and
+	// <returnType> is a comma-separated list of return types.
+	//
+	// If the method has multiple return types, the return type list is
+	// enclosed in parentheses. If the method has no return type, the
+	// return type list is empty.
+	func Signature() string {
+		args := []string{}
+		foreach this.Args as arg {
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, arg.Type))
+		}
+
+		returnValues := ""
+		if len(this.ReturnType) > 0 {
+			returnValues = strings.Join(this.ReturnType, ", ")
+			if len(this.ReturnType) > 1 {
+				returnValues = fmt.Sprintf("(%s)", returnValues)
+			}
+		}
+
+		if returnValues != "" {
+			return fmt.Sprintf("%s(%s) %s", this.Name, strings.Join(args, ", "), returnValues)
+		}
+
+		return fmt.Sprintf("%s(%s)", this.Name, strings.Join(args, ", "))
+	}
+
+
+
+	// String returns a string representation of the method.
+	//
+	// The returned string is in the format "Name: <name>, Args: <args>, ReturnType: <returnType>",
+	// where <name> is the name of the method, <args> is a slice of strings representing
+	// the names and types of the arguments, and <returnType> is a slice of strings
+	// representing the types of the return values.
+	func String() string {
+		return fmt.Sprintf("Name: %s, Args: %v, ReturnType: %v", this.Name, this.Args, this.ReturnType)
+	}
+}
+

@@ -1,0 +1,21 @@
+package transpiler
+
+import "strings"
+
+class Indentation as int32 {	
+	func Increment() {
+		*this++
+	}
+
+	func Decrement() {
+		if *this > 0 {
+			*this--
+		}
+	}
+
+	func String() string {
+		return strings.Repeat(" ", int(*this) * 4)
+	}	
+}
+
+

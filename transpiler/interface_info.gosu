@@ -1,0 +1,28 @@
+package transpiler
+
+import "fmt"
+
+class InterfaceInfo {
+	Name string
+	Methods []Method
+
+	func AddMethod(method Method) {
+		this.Methods = append(this.Methods, method)
+	}
+
+	func PrintInterfaceInfo() {
+		fmt.Printf("Interface: %s\n", this.Name)
+
+		foreach this.Methods as method {
+			fmt.Printf("\tMethod: %s\n", method.Name)
+			
+			foreach method.Args as arg {
+				fmt.Printf("\t\tArg: %s %s\n", arg.Name, arg.Type)
+			}
+
+			foreach method.ReturnType as returnType {
+				fmt.Printf("\t\tReturnType: %s\n", returnType)
+			}
+		}
+	}
+}

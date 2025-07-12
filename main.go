@@ -7,15 +7,21 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"gopp-parser/config"
-	"gopp-parser/parser"
-	"gopp-parser/transpiler"
+	"gosugar-parser/config"
+	"gosugar-parser/parser"
+	"gosugar-parser/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
 )
 
-// Função para validar se um caminho é um diretório
+// isDirectory checks if the given path is a directory.
+//
+// Parameters:
+// - path: The path to check if it is a directory.
+//
+// Returns true if the path is a directory, otherwise returns false.
 func isDirectory(path string) bool {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -24,7 +30,17 @@ func isDirectory(path string) bool {
 	return info.IsDir()
 }
 
-// Função transpiller que converte o código e escreve em um arquivo .go
+// transpiller reads a source file, parses its content, and writes the
+// transpiled Go code to the specified output directory. It maintains
+// the directory structure relative to the base path.
+//
+// Parameters:
+// - filePath: The path to the source file to be transpiled.
+// - basePath: The base path to maintain directory structure for output.
+// - outputDir: The directory where the transpiled Go file will be written.
+//
+// Returns an error if any file operations fail or if there are issues
+// during parsing or writing the output file.
 func transpiller(filePath, basePath, outputDir string) error {
 
 	content, err := os.ReadFile(filePath)
@@ -34,18 +50,15 @@ func transpiller(filePath, basePath, outputDir string) error {
 
 	input := antlr.NewInputStream(string(content))
 
-	// Configuração do lexer e parser
 	lexer := parser.NewGoSugarLexer(input)
 	stream := antlr.NewCommonTokenStream(lexer, 0)
 	p := parser.NewGoSugarParser(stream)
 	p.BuildParseTrees = true
 
-	// Listener para processar a árvore de análise
 	listener := &transpiler.TranspilerListener{}
 	tree := p.Program()
 	antlr.ParseTreeWalkerDefault.Walk(listener, tree)
 
-	// Preservar a estrutura de diretórios no outputDir
 	relPath, err := filepath.Rel(basePath, filepath.Dir(filePath))
 	if err != nil {
 		return fmt.Errorf("error getting relative path: %v", err)
@@ -56,12 +69,10 @@ func transpiller(filePath, basePath, outputDir string) error {
 		return fmt.Errorf("error creating output directory %s: %v", outputPath, err)
 	}
 
-	// Criar caminho do arquivo de saída
 	outputFilePath := filepath.Join(outputPath, filepath.Base(filePath[:len(filePath)-len(filepath.Ext(filePath))]+".go"))
 
-	fmt.Printf("code structure: %s\n", listener.ProcessedRulesList.ToString())
+	// fmt.Printf("code structure: %s\n", listener.ProcessedRulesList.ToString())
 
-	// Escrever o arquivo
 	err = os.WriteFile(outputFilePath, []byte(listener.GoCode()), 0644)
 	if err != nil {
 		return fmt.Errorf("error writing to file %s: %v", outputFilePath, err)
@@ -71,6 +82,8 @@ func transpiller(filePath, basePath, outputDir string) error {
 	return nil
 }
 
+// readEnvFile reads the .gosugar.env file from the given directory and returns its
+// contents. If the file does not exist, it returns nil and no error.
 func readEnvFile(path string) ([]byte, error) {
 	envFilePath := filepath.Join(path, ".gosugar.env")
 	if _, err := os.Stat(envFilePath); os.IsNotExist(err) {
@@ -85,6 +98,10 @@ func readEnvFile(path string) ([]byte, error) {
 	return content, nil
 }
 
+// processDirectory walks through the given directory and its subdirectories,
+// transpiling all .gosu files into .go files and copying all other files into
+// the output directory. It first cleans the output directory, then creates it
+// again with the correct permissions.
 func processDirectory(path string) error {
 	content, enverr := readEnvFile(path)
 	if enverr == nil && content != nil {
@@ -96,7 +113,17 @@ func processDirectory(path string) error {
 		outputDir = filepath.Join(path, "dist")
 	}
 
-	err := filepath.WalkDir(path, func(filePath string, d fs.DirEntry, err error) error {
+	err := os.RemoveAll(outputDir)
+	if err != nil {
+		return fmt.Errorf("error cleaning output directory %s: %v", outputDir, err)
+	}
+
+	err = os.MkdirAll(outputDir, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("error creating output directory %s: %v", outputDir, err)
+	}
+
+	err = filepath.WalkDir(path, func(filePath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -109,11 +136,15 @@ func processDirectory(path string) error {
 					return err
 				}
 			} else {
-				// Copiar arquivos que não são .gosu para o diretório de saída
 				relPath, err := filepath.Rel(path, filePath)
 				if err != nil {
 					return fmt.Errorf("error getting relative path: %v", err)
 				}
+
+				if strings.HasPrefix(relPath, ".git") || strings.HasPrefix(filePath, outputDir) {
+					return nil
+				}
+
 				destPath := filepath.Join(outputDir, relPath)
 				if err := os.MkdirAll(filepath.Dir(destPath), os.ModePerm); err != nil {
 					return fmt.Errorf("error creating output directory %s: %v", filepath.Dir(destPath), err)
@@ -131,6 +162,7 @@ func processDirectory(path string) error {
 	return err
 }
 
+// copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	sourceFile, err := os.Open(src)
 	if err != nil {
@@ -152,6 +184,9 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
+// main processes all .gosu files in the directory given in the --path
+// parameter and outputs the corresponding .go files in the same
+// directory.
 func main() {
 	path := flag.String("path", "", "Path to the directory containing .gosu files")
 	flag.Parse()
