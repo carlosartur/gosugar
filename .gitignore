@@ -3,5 +3,3 @@
 
 parser/*
 !parser/.gitkeep
-
-dist/*
