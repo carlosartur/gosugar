@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gopp-parser/parser" // Replace with the path to the generated parser
+	"gosugar-parser/parser" // Replace with the path to the generated parser
 
 	"reflect"
 	"runtime"
@@ -70,7 +70,7 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 	// It returns the complete Go code representation as a single string.
 	func GoCode() string {
 		// Combines struct and methods sequentially
-		return this.structBuilder.String() + "\n" + this.structBuilder.String()
+		return this.structBuilder.String() + "\n" + this.methodBuilder.String()
 	}
 
 	// EnterClassDeclaration is called when entering the classDeclaration production.

@@ -1,3 +1,3 @@
-module gopp-parser/transpiler
+module gosugar-parser/transpiler
 
 go 1.18

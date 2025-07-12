@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopp-parser/config"
-	"gopp-parser/parser"
-	"gopp-parser/transpiler"
+	"gosugar-parser/config"
+	"gosugar-parser/parser"
+	"gosugar-parser/transpiler"
 
 	"github.com/antlr4-go/antlr/v4"
 )
@@ -141,7 +141,7 @@ func processDirectory(path string) error {
 					return fmt.Errorf("error getting relative path: %v", err)
 				}
 
-				if strings.HasPrefix(relPath, ".git") || strings.HasPrefix(relPath, outputDir) {
+				if strings.HasPrefix(relPath, ".git") || strings.HasPrefix(filePath, outputDir) {
 					return nil
 				}
 
