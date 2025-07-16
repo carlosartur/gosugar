@@ -68,6 +68,9 @@ type GoSugarListener interface {
 	// EnterFieldDeclaration is called when entering the fieldDeclaration production.
 	EnterFieldDeclaration(c *FieldDeclarationContext)
 
+	// EnterStructTag is called when entering the structTag production.
+	EnterStructTag(c *StructTagContext)
+
 	// EnterMethodDeclaration is called when entering the methodDeclaration production.
 	EnterMethodDeclaration(c *MethodDeclarationContext)
 
@@ -271,6 +274,9 @@ type GoSugarListener interface {
 
 	// ExitFieldDeclaration is called when exiting the fieldDeclaration production.
 	ExitFieldDeclaration(c *FieldDeclarationContext)
+
+	// ExitStructTag is called when exiting the structTag production.
+	ExitStructTag(c *StructTagContext)
 
 	// ExitMethodDeclaration is called when exiting the methodDeclaration production.
 	ExitMethodDeclaration(c *MethodDeclarationContext)

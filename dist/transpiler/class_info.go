@@ -1,10 +1,19 @@
 package transpiler
 
-import "fmt"
+import (
+    "fmt"
+    "strings"
+)
+
+type StructTag struct {
+    Content string
+    IsAngleTag bool
+}
 
 type Field struct {
     Name string
     Type string
+    Tag *StructTag
 }
 
 type ClassInfo struct {
@@ -17,11 +26,42 @@ type ClassInfo struct {
 }
 
 
-func (Field) Constructor(name string, typ string) *Field {
+func (StructTag) Constructor(content string, isAngleTag bool) *StructTag {
+    this := new(StructTag)
+    this.Content = content
+    this.IsAngleTag = isAngleTag
+    return this
+
+}
+
+func (this *StructTag) ToString() string {
+    content := this.Content
+    startsWith := "`"
+    endsWith := "`"
+    if this.IsAngleTag {
+        startsWith = "<"
+        endsWith = ">"
+    }
+    content = strings.TrimPrefix(content,startsWith)
+    content = strings.TrimSuffix(content,endsWith)
+    return fmt.Sprintf("`%s`",content)
+
+}
+
+func (Field) Constructor(name string, typ string, tag StructTag) *Field {
     this := new(Field)
     this.Name = name
     this.Type = typ
+    this.Tag = &tag
     return this
+
+}
+
+func (this *Field) ToString() string {
+    if this.Tag==nil||this.Tag.Content=="" {
+        return fmt.Sprintf("%s %s\n",this.Name,this.Type)
+    }
+    return fmt.Sprintf("%s %s %s\n",this.Name,this.Type,this.Tag.ToString())
 
 }
 
@@ -52,9 +92,10 @@ func (this *ClassInfo) AddMustInterfaceList(mustInterface InterfaceInfo) {
 
 }
 
-func (this *ClassInfo) AddField(name string, typ string) {
-    field := Field{}.Constructor(name, typ)    
+func (this *ClassInfo) AddField(name string, typ string, tag StructTag) *Field {
+    field := Field{}.Constructor(name, typ, tag)    
     this.Fields = append(this.Fields,*field)
+    return field
 
 }
 

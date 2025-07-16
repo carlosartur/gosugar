@@ -1,14 +1,54 @@
 package transpiler
 
-import "fmt"
+import (
+    "fmt"
+    "strings"
+)
+
+class StructTag {
+	Content string
+	IsAngleTag bool
+
+	func Constructor(content string, isAngleTag bool) {
+		this.Content = content
+		this.IsAngleTag = isAngleTag
+	}
+
+	func ToString() string {
+		content := this.Content
+
+		startsWith := "`"
+		endsWith := "`"
+		
+		if this.IsAngleTag {
+			startsWith = "<"
+			endsWith = ">"
+		} 
+		
+		content = strings.TrimPrefix(content, startsWith)
+		content = strings.TrimSuffix(content, endsWith)
+
+		return fmt.Sprintf("`%s`", content)
+	}
+}
 
 class Field {
 	Name string
 	Type string
+	Tag  *StructTag
 
-	func Constructor(name string, typ string) {
+	func Constructor(name string, typ string, tag StructTag) {
 		this.Name = name
 		this.Type = typ
+		this.Tag = &tag
+	}
+
+	func ToString() string {
+		if this.Tag == nil || this.Tag.Content == "" {
+			return fmt.Sprintf("%s %s\n", this.Name, this.Type)
+		}
+
+		return fmt.Sprintf("%s %s %s\n", this.Name, this.Type, this.Tag.ToString())
 	}
 }
 
@@ -52,10 +92,12 @@ class ClassInfo {
 	// AddField adds a field to the class info.
 	//
 	// The field is represented as a Field type containing the name and type of the field.
-	func AddField(name string, typ string) {
-		field := create Field(name, typ)
+	func AddField(name string, typ string, tag StructTag) *Field {
+		field := create Field(name, typ, tag)
 
 		this.Fields = append(this.Fields, *field)
+
+		return field
 	}
 
 	// HasConstructor returns whether the class has a constructor method named "Constructor" or not.

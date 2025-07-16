@@ -183,9 +183,19 @@ class TranspilerListener use *parser.BaseGoSugarListener {
 	func EnterFieldDeclaration(ctx *parser.FieldDeclarationContext) {
 		fieldName := ctx.IDENTIFIER().GetText()
 		fieldType := ctx.VarType().GetText()
-		this.AddStringToStruct(fmt.Sprintf("%s %s\n", fieldName, fieldType))
 
-		CurrentClass.AddField(fieldName, fieldType)
+		fieldTag := StructTag{}
+
+		if ctx.StructTag() != nil {
+			isAngleTag := ctx.StructTag().ANGLE_TAG() != nil
+			
+			fieldTagVal := create StructTag(ctx.StructTag().GetText(), isAngleTag)
+			fieldTag = *fieldTagVal
+		}
+
+		fieldData := CurrentClass.AddField(fieldName, fieldType, fieldTag)
+
+		this.AddStringToStruct(fieldData.ToString())
 	}
 
 	// EnterMethodDeclaration is called when entering the methodDeclaration production.

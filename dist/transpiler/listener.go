@@ -117,8 +117,14 @@ func (this *TranspilerListener) ExitClassDeclaration(ctx *parser.ClassDeclaratio
 func (this *TranspilerListener) EnterFieldDeclaration(ctx *parser.FieldDeclarationContext) {
     fieldName := ctx.IDENTIFIER().GetText()
     fieldType := ctx.VarType().GetText()
-    this.AddStringToStruct(fmt.Sprintf("%s %s\n",fieldName,fieldType))
-    CurrentClass.AddField(fieldName, fieldType)
+    fieldTag := StructTag{}
+    if ctx.StructTag()!=nil {
+        isAngleTag := ctx.StructTag().ANGLE_TAG()!=nil
+        fieldTagVal := StructTag{}.Constructor(ctx.StructTag().GetText(), isAngleTag)        
+        fieldTag = *fieldTagVal
+    }
+    fieldData := CurrentClass.AddField(fieldName,fieldType,fieldTag)
+    this.AddStringToStruct(fieldData.ToString())
 
 }
 

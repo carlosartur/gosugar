@@ -87,7 +87,12 @@ varType
     ;
 
 fieldDeclaration
-    : IDENTIFIER varType
+    : IDENTIFIER varType structTag?
+    ;
+
+structTag
+    : STRING_TAG
+    | ANGLE_TAG
     ;
 
 methodDeclaration
@@ -387,3 +392,7 @@ LineComment
 
 // Final de instrução (implícito)
 NEWLINE: ';' | '\r'? '\n';
+
+// struct tags
+STRING_TAG   : '`' .*? '`';
+ANGLE_TAG    : '<' ~[>]* '>';

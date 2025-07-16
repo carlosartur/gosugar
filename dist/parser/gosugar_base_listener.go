@@ -141,6 +141,12 @@ func (s *BaseGoSugarListener) EnterFieldDeclaration(ctx *FieldDeclarationContext
 // ExitFieldDeclaration is called when production fieldDeclaration is exited.
 func (s *BaseGoSugarListener) ExitFieldDeclaration(ctx *FieldDeclarationContext) {}
 
+// EnterStructTag is called when production structTag is entered.
+func (s *BaseGoSugarListener) EnterStructTag(ctx *StructTagContext) {}
+
+// ExitStructTag is called when production structTag is exited.
+func (s *BaseGoSugarListener) ExitStructTag(ctx *StructTagContext) {}
+
 // EnterMethodDeclaration is called when production methodDeclaration is entered.
 func (s *BaseGoSugarListener) EnterMethodDeclaration(ctx *MethodDeclarationContext) {}
 

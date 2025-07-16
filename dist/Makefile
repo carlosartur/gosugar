@@ -1,5 +1,5 @@
 APP_NAME = gosugar
-SOURCE_DIR = .
+SOURCE_DIR = ./dist
 BIN_DIR = ./bin
 
 # Ensure the bin directories exist
